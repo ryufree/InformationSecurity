@@ -1,0 +1,39 @@
+Router> enable (= User Mode)
+Router# configure terminal (= conf t) (= 관리자 모드)
+Router(config) # interface s1/0 (= int s1/0) (= Global Configuration Mode 전체 설정 모드)
+Router(config-if) # exit (previous mode) / end or ctrl-z (관리자 모드)
+Router# copy running-config startup-config
+Router# erase startup-config
+
+Router>enable (= en)
+Router# configure terminal (= conf t)
+Router(config)# line ?
+	<2-499> First Line number
+	aux	Auxiliary line
+	console 	Primary terminal line
+	tty	Terminal controller
+	vty	Virtual terminal
+Router(config)# line console ?
+	<0-0> First Line number
+
+Router(config)# line con 0
+Router(config-line)# password ciscocon
+Router(config-line)# login
+Router(config-line)# 
+Router(config-line)# line aux 0
+Router(config-line)# password ciscoaux
+Router(config-line)# login
+Router(config-line)# 
+Router(config-line)# line vty 0 4
+Router(config-line)# password ciscovty
+Router(config-line)# login
+
+Router(config)# enable secret cisco
+Router(config)# enable password ciscopass
+Router# show run
+
+
+* SecureCRT + Cisco Packet Tracer
+-- capture R1 s1/0 RIPv1.cap HDLC
+-- no capture R1 s1/0
+

@@ -1,0 +1,12 @@
+Router> enable
+Router# show ip interface brief (= show ip int brief)
+Router# show interface s1/0 (= show int s1/0)
+Router# configure terminal (= conf t)
+Router(config)# interface s1/0 (= int s1/0)
+Router(config-if)# ip address 13.13.12.1 255.255.255.0
+Router(config-if)# encapsulation ?
+Router(config-if)# no shutdown
+Router(config-if)# end
+Router# show running-config (= show run)
+Router# show ip interface brief (= show ip int brief)
+Router# show interface s1/0

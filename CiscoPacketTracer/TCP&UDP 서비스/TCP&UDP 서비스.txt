@@ -1,0 +1,77 @@
+@ 네트워크 주소 체계
+
+1. 포트 번호
+
+ - TCP, UDP 헤더 안에 포함된 주소
+ - 주소 체계 : 16bit(0~65535)
+ - 클라이언트 입장	: 서비스 요청, 실행
+ - 서버 입장	: 서비스 구분, 제공
+
+User Ports (1024-49151)		PC에서 사용하는 포트
+Dynamic/PrivatePorts (49152-65535)	동적/사설 포트
+
+System Ports (0-1023)		서비스 예약용
+
+	TCP				UDP
+
+http	80		domain/dns	53
+https	443		bootps		67 (DHCP Server)
+telnet	23		bootpc		68 (DHCP Client)
+ssh	22		tftp		69
+ftp	21		snmp		161
+ftp-data	20		ntp		123
+smtp	25
+pop3	110
+
+2. IP 주소
+
+ - IP 헤더 안에 포함된 주소
+ - 주소 체계 : 32bit(2^32개 = 4,294,967,296)
+ - 로컬 환경에서 리모트 환경으로 데이터 전송 담당
+ - 변경이 가능한 논리적인 주소
+
+3. MAC 주소
+
+ - ETH 헤더 안에 포함된 주소
+ - 주소 체계 : 48bit(2^48개)
+ - ETH 로컬 환경 내에서 데이터 전송 담당
+ - 00-e0-4c-14-62-ba
+   ----------- OUI 24bit : 랜카드 업체가 IEEE 기관으로부터 임대받은 주소
+
+ - 변경 불가능한 물리적인 주소
+
+C:\Users\Administrator>ipconfig /all
+
+무선 LAN 어댑터 무선 네트워크 연결:
+
+   연결별 DNS 접미사. . . . :
+   설명. . . . . . . . . . . . : Realtek 8812AU Wireless LAN 802.11ac USB NIC
+   물리적 주소 . . . . . . . . : 90-9F-33-EB-34-98
+   DHCP 사용 . . . . . . . . . : 아니요
+   자동 구성 사용. . . . . . . : 예
+   IPv4 주소 . . . . . . . . . : 192.168.14.11(기본 설정)
+   서브넷 마스크 . . . . . . . : 255.255.255.0
+   기본 게이트웨이 . . . . . . : 192.168.14.1
+   DNS 서버. . . . . . . . . . : 168.126.63.1
+                                 1.255.56.94
+   Tcpip를 통한 NetBIOS. . . . : 사용
+
+C:\Users\Administrator>ping 192.168.1.254
+
+
+C:\Users\Administrator>nslookup www.ryufree.com
+
+
+C:\Users\Administrator>netstat -n
+
+활성 연결
+
+  프로토콜  로컬 주소           외부 주소              상태
+  TCP    127.0.0.1:1521         127.0.0.1:49160        ESTABLISHED
+  TCP    127.0.0.1:49160        127.0.0.1:1521         ESTABLISHED
+  TCP    127.0.0.1:49347        127.0.0.1:49348        ESTABLISHED
+  TCP    127.0.0.1:49348        127.0.0.1:49347        ESTABLISHED
+  TCP    192.168.14.11:49469    125.209.197.218:80     ESTABLISHED
+  TCP    192.168.14.11:49470    125.209.197.218:80     ESTABLISHED
+  TCP    192.168.14.11:49471    125.209.197.218:80     ESTABLISHED
+  TCP    192.168.14.11:49472    125.209.197.218:80     ESTABLISHED

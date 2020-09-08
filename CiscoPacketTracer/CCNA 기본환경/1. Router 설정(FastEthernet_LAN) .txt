@@ -1,0 +1,16 @@
+Router> enable
+Router# configure terminal (단축: conf t)
+Router(config)# interface fa0/0 (단축: int fa0/0)
+Router(config)# ip address 13.13.10.1 255.255.255.0
+Router(config)# no shutdown
+Router(config)# end (Ctrl+Z)
+Router# show running-config (단축: show run)
+Router# show ip interface brief (단축: show ip int brief)
+Router# show interface fa0/0 (단축: show int fa0/0)
+Router# show arp
+Router# ping 13.13.10.2
+Router# ping 13.13.10.3
+Router# show arp
+
+c:\> ping 13.13.10.1
+c:\> arp -a
