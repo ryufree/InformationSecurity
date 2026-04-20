@@ -47,43 +47,35 @@
     <!-- ─── 3-Pane Layout ────────────────────────────────────── -->
     <div v-else class="cv-layout">
 
-      <!-- ══ Sticky Header ══ -->
+      <!-- ══ Sticky Header (3 rows) ══ -->
       <div class="cv-head-row">
 
-        <!-- Frozen header (always visible) -->
+        <!-- Frozen header: spec labels span all 3 rows via rowspan -->
         <div class="cv-head-frozen" :style="{ width: frozenTotalWidth + 'px' }">
           <table class="cv-tbl">
             <colgroup>
-              <col
-                v-for="col in frozenCols" :key="col.key"
-                :style="{ width: col.width + 'px' }"
-              >
+              <col v-for="col in frozenCols" :key="col.key" :style="{ width: col.width + 'px' }">
             </colgroup>
             <thead>
-              <!-- Row 1: group label row — visually same height as Intel/AMD group row -->
               <tr class="cv-hrow cv-hrow--g">
                 <th
-                  v-for="col in frozenCols" :key="col.key"
+                  v-for="(col, ci) in frozenCols" :key="col.key"
                   class="cv-th cv-th--spec"
-                  :style="{ width: col.width + 'px', minWidth: col.width + 'px' }"
+                  rowspan="3"
+                  :style="{
+                    width: col.width + 'px',
+                    minWidth: col.width + 'px',
+                    ...(headerColors.specHeaders[ci] ? { backgroundColor: headerColors.specHeaders[ci], color: '#000' } : {}),
+                  }"
                 >{{ col.label }}</th>
               </tr>
-              <!-- Row 2: invisible spacer — forces same height as chip sub-header row -->
-              <tr class="cv-hrow cv-hrow--s">
-                <th
-                  v-for="col in frozenCols" :key="'sp-' + col.key"
-                  class="cv-th cv-th--spec cv-th--spacer"
-                  :style="{ width: col.width + 'px', minWidth: col.width + 'px' }"
-                >
-                  <div class="cv-th-chip cv-th--ghost">x</div>
-                  <div class="cv-th-date cv-th--ghost">x</div>
-                </th>
-              </tr>
+              <tr class="cv-hrow cv-hrow--cn"></tr>
+              <tr class="cv-hrow cv-hrow--dt"></tr>
             </thead>
           </table>
         </div>
 
-        <!-- Intel header -->
+        <!-- Intel header: 3 rows -->
         <div class="cv-head-chip" ref="intelHeadRef" v-if="intelGroup">
           <table
             class="cv-tbl cv-tbl--chip"
@@ -94,36 +86,53 @@
                    :style="{ width: colWidth('intel', col) + 'px' }">
             </colgroup>
             <thead>
+              <!-- Row 1: Intel group label -->
               <tr class="cv-hrow cv-hrow--g">
                 <th
-                  v-if="intelPinnedCols.length"
-                  :colspan="intelPinnedCols.length"
-                  class="cv-th cv-th--intel cv-th--group cv-th--group-pinned"
-                  :style="groupHeaderStyle('intel')"
-                >Intel</th>
-                <th
-                  v-if="intelScrollableColCount"
-                  :colspan="intelScrollableColCount"
+                  :colspan="intelGroup.cols.length"
                   class="cv-th cv-th--intel cv-th--group"
-                ></th>
+                  :style="{
+                    position: 'sticky', left: '0px', zIndex: 46,
+                    ...(headerColors.intelGroup ? { backgroundColor: headerColors.intelGroup, color: '#000' } : {}),
+                  }"
+                >Intel</th>
               </tr>
-              <tr class="cv-hrow cv-hrow--s">
+              <!-- Row 2: Chip names -->
+              <tr class="cv-hrow cv-hrow--cn">
                 <th
                   v-for="(col, idx) in intelGroup.cols" :key="col.key"
                   class="cv-th cv-th--sub cv-th--intel"
                   :class="{ 'cv-chip-sticky': isPinnedChipCol('intel', idx) }"
-                  :style="chipStickyStyle('intel', idx, true)"
+                  :style="{
+                    ...chipStickyStyle('intel', idx, true),
+                    width: colWidth('intel', col) + 'px',
+                    minWidth: colWidth('intel', col) + 'px',
+                    ...(headerColors.chipCols[col.key] ? { backgroundColor: headerColors.chipCols[col.key], color: '#000' } : {}),
+                  }"
                 >
-                  <div class="cv-th-chip">{{ col.chip }}</div>
-                  <div class="cv-th-date">{{ col.date }}</div>
+                  {{ col.chip }}
                   <span class="cv-col-resizer" @mousedown="startColResize('intel', col, $event)"></span>
                 </th>
+              </tr>
+              <!-- Row 3: Dates -->
+              <tr class="cv-hrow cv-hrow--dt">
+                <th
+                  v-for="(col, idx) in intelGroup.cols" :key="'d-'+col.key"
+                  class="cv-th cv-th--date cv-th--intel"
+                  :class="{ 'cv-chip-sticky': isPinnedChipCol('intel', idx) }"
+                  :style="{
+                    ...chipStickyStyle('intel', idx, true),
+                    width: colWidth('intel', col) + 'px',
+                    minWidth: colWidth('intel', col) + 'px',
+                    ...(headerColors.dateCols[col.key] ? { backgroundColor: headerColors.dateCols[col.key], color: '#000' } : {}),
+                  }"
+                >{{ col.date }}</th>
               </tr>
             </thead>
           </table>
         </div>
 
-        <!-- AMD header -->
+        <!-- AMD header: 3 rows -->
         <div class="cv-head-chip" ref="amdHeadRef" v-if="amdGroup">
           <table
             class="cv-tbl cv-tbl--chip"
@@ -134,30 +143,47 @@
                    :style="{ width: colWidth('amd', col) + 'px' }">
             </colgroup>
             <thead>
+              <!-- Row 1: AMD group label -->
               <tr class="cv-hrow cv-hrow--g">
                 <th
-                  v-if="amdPinnedCols.length"
-                  :colspan="amdPinnedCols.length"
-                  class="cv-th cv-th--amd cv-th--group cv-th--group-pinned"
-                  :style="groupHeaderStyle('amd')"
-                >AMD</th>
-                <th
-                  v-if="amdScrollableColCount"
-                  :colspan="amdScrollableColCount"
+                  :colspan="amdGroup.cols.length"
                   class="cv-th cv-th--amd cv-th--group"
-                ></th>
+                  :style="{
+                    position: 'sticky', left: '0px', zIndex: 46,
+                    ...(headerColors.amdGroup ? { backgroundColor: headerColors.amdGroup, color: '#000' } : {}),
+                  }"
+                >AMD</th>
               </tr>
-              <tr class="cv-hrow cv-hrow--s">
+              <!-- Row 2: Chip names -->
+              <tr class="cv-hrow cv-hrow--cn">
                 <th
                   v-for="(col, idx) in amdGroup.cols" :key="col.key"
                   class="cv-th cv-th--sub cv-th--amd"
                   :class="{ 'cv-chip-sticky': isPinnedChipCol('amd', idx) }"
-                  :style="chipStickyStyle('amd', idx, true)"
+                  :style="{
+                    ...chipStickyStyle('amd', idx, true),
+                    width: colWidth('amd', col) + 'px',
+                    minWidth: colWidth('amd', col) + 'px',
+                    ...(headerColors.chipCols[col.key] ? { backgroundColor: headerColors.chipCols[col.key], color: '#000' } : {}),
+                  }"
                 >
-                  <div class="cv-th-chip">{{ col.chip }}</div>
-                  <div class="cv-th-date">{{ col.date }}</div>
+                  {{ col.chip }}
                   <span class="cv-col-resizer" @mousedown="startColResize('amd', col, $event)"></span>
                 </th>
+              </tr>
+              <!-- Row 3: Dates -->
+              <tr class="cv-hrow cv-hrow--dt">
+                <th
+                  v-for="(col, idx) in amdGroup.cols" :key="'d-'+col.key"
+                  class="cv-th cv-th--date cv-th--amd"
+                  :class="{ 'cv-chip-sticky': isPinnedChipCol('amd', idx) }"
+                  :style="{
+                    ...chipStickyStyle('amd', idx, true),
+                    width: colWidth('amd', col) + 'px',
+                    minWidth: colWidth('amd', col) + 'px',
+                    ...(headerColors.dateCols[col.key] ? { backgroundColor: headerColors.dateCols[col.key], color: '#000' } : {}),
+                  }"
+                >{{ col.date }}</th>
               </tr>
             </thead>
           </table>
@@ -172,20 +198,20 @@
         <div class="cv-body-frozen" :style="{ width: frozenTotalWidth + 'px' }">
           <table class="cv-tbl">
             <colgroup>
-              <col
-                v-for="col in frozenCols" :key="col.key"
-                :style="{ width: col.width + 'px' }"
-              >
+              <col v-for="col in frozenCols" :key="col.key" :style="{ width: col.width + 'px' }">
             </colgroup>
             <tbody>
-              <tr
-                v-for="(row, ri) in filteredRows" :key="ri"
-                class="cv-tr" :class="{ 'cv-tr--alt': ri % 2 === 1 }"
-              >
+              <tr v-for="(row, ri) in filteredRows" :key="ri" class="cv-tr">
                 <td
-                  v-for="col in frozenCols" :key="col.key"
+                  v-for="(col, ci) in frozenCols" :key="col.key"
                   class="cv-td cv-td--spec"
-                  :style="{ width: col.width + 'px', minWidth: col.width + 'px' }"
+                  :style="{
+                    width: col.width + 'px',
+                    minWidth: col.width + 'px',
+                    ...(cellColors[`${row.__idx}_${col.key}`]
+                      ? { backgroundColor: cellColors[`${row.__idx}_${col.key}`], color: '#000' }
+                      : {}),
+                  }"
                 >{{ row[col.key] }}</td>
               </tr>
               <tr v-if="!filteredRows.length">
@@ -215,10 +241,7 @@
               >
             </colgroup>
             <tbody>
-              <tr
-                v-for="(row, ri) in filteredRows" :key="ri"
-                class="cv-tr" :class="{ 'cv-tr--alt': ri % 2 === 1 }"
-              >
+              <tr v-for="(row, ri) in filteredRows" :key="ri" class="cv-tr">
                 <td
                   v-for="(col, idx) in intelGroup.cols" :key="col.key"
                   class="cv-td cv-td--intel"
@@ -259,10 +282,7 @@
               >
             </colgroup>
             <tbody>
-              <tr
-                v-for="(row, ri) in filteredRows" :key="ri"
-                class="cv-tr" :class="{ 'cv-tr--alt': ri % 2 === 1 }"
-              >
+              <tr v-for="(row, ri) in filteredRows" :key="ri" class="cv-tr">
                 <td
                   v-for="(col, idx) in amdGroup.cols" :key="col.key"
                   class="cv-td cv-td--amd"
@@ -305,6 +325,14 @@ const chipGroups = ref([])
 const cellColors = ref({})
 const lastVersion = ref('')
 
+const headerColors = reactive({
+  specHeaders: [],   // [bg, ...] for 6 spec header cells
+  intelGroup: null,
+  amdGroup: null,
+  chipCols: {},      // { [key]: bg } chip name row
+  dateCols: {},      // { [key]: bg } date row
+})
+
 const filterDate  = ref('')
 const specFilters = reactive([
   { key: 'dimm',    label: 'DIMM',         value: '', options: [] },
@@ -325,10 +353,7 @@ const frozenCols = [
   { key: 'speed',   label: 'Speed',          width: 70  },
 ]
 
-const pinnedChipCounts = {
-  intel: 3,
-  amd: 2,
-}
+const pinnedChipCounts = { intel: 3, amd: 2 }
 
 /* ── Pane refs & scroll sync ──────────────────────────────────── */
 const intelHeadRef = ref(null)
@@ -343,14 +368,11 @@ function onAmdScroll(e) {
   if (amdHeadRef.value) amdHeadRef.value.scrollLeft = e.target.scrollLeft
 }
 
-/* ── Chip pane width (ResizeObserver) ────────────────────────────
-   헤더 테이블과 바디 테이블이 별도 DOM이므로
-   pane 실제 너비를 측정해 동일한 명시적 픽셀 너비를 양쪽에 주입한다.
-   ─────────────────────────────────────────────────────────────── */
-const CHIP_COL_MIN = 80          // 절대 최소 컬럼 너비(px)
-const CHIP_COL_MAX = 600         // 드래그로 늘릴 최대 너비(px)
-const CHAR_PX      = 6.5         // JetBrains Mono ~9px 기준 글자폭 추정치
-const CELL_PAD     = 24          // 좌우 패딩 합계
+/* ── Chip pane width (ResizeObserver) ─────────────────────────── */
+const CHIP_COL_MIN = 80
+const CHIP_COL_MAX = 600
+const CHAR_PX      = 6.5
+const CELL_PAD     = 24
 
 const chipPaneWidth = ref(0)
 let _ro = null
@@ -367,7 +389,6 @@ watch([intelBodyRef, amdBodyRef], ([intel, amd]) => {
 
 onUnmounted(() => { if (_ro) _ro.disconnect() })
 
-/* 칩 이름 길이 기반 최소 너비 계산 */
 function chipMinW(group) {
   if (!group?.cols.length) return CHIP_COL_MIN
   return Math.ceil(Math.max(
@@ -378,7 +399,6 @@ function chipMinW(group) {
   ))
 }
 
-/* 실제 컬럼 너비: pane 여유가 있으면 균등 분할, 없으면 최소 너비 사용 */
 function calcColW(group, paneW) {
   const minW = chipMinW(group)
   if (!group || !paneW) return minW
@@ -395,22 +415,15 @@ const intelPinnedCount = computed(() => Math.min(pinnedChipCounts.intel, intelGr
 const amdPinnedCount   = computed(() => Math.min(pinnedChipCounts.amd, amdGroup.value?.cols.length ?? 0))
 const intelPinnedCols = computed(() => intelGroup.value?.cols.slice(0, intelPinnedCount.value) ?? [])
 const amdPinnedCols   = computed(() => amdGroup.value?.cols.slice(0, amdPinnedCount.value) ?? [])
-const intelScrollableColCount = computed(() => Math.max((intelGroup.value?.cols.length ?? 0) - intelPinnedCount.value, 0))
-const amdScrollableColCount   = computed(() => Math.max((amdGroup.value?.cols.length ?? 0) - amdPinnedCount.value, 0))
 
-/* ── Column resize (Intel / AMD) ─────────────────────────────── */
+/* ── Column resize ────────────────────────────────────────────── */
 const COL_WIDTHS_KEY = 'cv_colWidths_v1'
-const colWidthOverrides = reactive({
-  intel: {},
-  amd: {},
-})
+const colWidthOverrides = reactive({ intel: {}, amd: {} })
 
 Object.assign(colWidthOverrides, loadColWidthOverrides())
 
 watch(colWidthOverrides, () => {
-  try {
-    localStorage.setItem(COL_WIDTHS_KEY, JSON.stringify(colWidthOverrides))
-  } catch {}
+  try { localStorage.setItem(COL_WIDTHS_KEY, JSON.stringify(colWidthOverrides)) } catch {}
 }, { deep: true })
 
 function loadColWidthOverrides() {
@@ -419,17 +432,13 @@ function loadColWidthOverrides() {
     if (!raw) return { intel: {}, amd: {} }
     const parsed = JSON.parse(raw)
     return {
-      intel: (parsed && typeof parsed === 'object' && parsed.intel && typeof parsed.intel === 'object') ? parsed.intel : {},
-      amd: (parsed && typeof parsed === 'object' && parsed.amd && typeof parsed.amd === 'object') ? parsed.amd : {},
+      intel: (parsed?.intel && typeof parsed.intel === 'object') ? parsed.intel : {},
+      amd:   (parsed?.amd   && typeof parsed.amd   === 'object') ? parsed.amd   : {},
     }
-  } catch {
-    return { intel: {}, amd: {} }
-  }
+  } catch { return { intel: {}, amd: {} } }
 }
 
-function clamp(n, min, max) {
-  return Math.min(max, Math.max(min, n))
-}
+function clamp(n, min, max) { return Math.min(max, Math.max(min, n)) }
 
 function chipColMinW(col) {
   if (!col) return CHIP_COL_MIN
@@ -439,21 +448,15 @@ function chipColMinW(col) {
   ))
 }
 
-function baseColWByType(type) {
-  return type === 'amd' ? amdColW.value : intelColW.value
-}
-
-function colsByType(type) {
-  return type === 'amd' ? (amdGroup.value?.cols ?? []) : (intelGroup.value?.cols ?? [])
-}
+function baseColWByType(type) { return type === 'amd' ? amdColW.value : intelColW.value }
+function colsByType(type)     { return type === 'amd' ? (amdGroup.value?.cols ?? []) : (intelGroup.value?.cols ?? []) }
 
 function colWidth(type, col) {
   const key = col?.key
   const baseW = baseColWByType(type)
   const minW = chipColMinW(col)
   const overrideW = key ? colWidthOverrides[type]?.[key] : undefined
-  const w = Number.isFinite(overrideW) ? overrideW : baseW
-  return Math.max(minW, w)
+  return Math.max(minW, Number.isFinite(overrideW) ? overrideW : baseW)
 }
 
 const intelTableWidth = computed(() => colsByType('intel').reduce((a, c) => a + colWidth('intel', c), 0))
@@ -461,17 +464,12 @@ const amdTableWidth   = computed(() => colsByType('amd').reduce((a, c) => a + co
 
 function startColResize(type, col, e) {
   if (!col?.key) return
-  e?.preventDefault?.()
-  e?.stopPropagation?.()
-
+  e?.preventDefault?.(); e?.stopPropagation?.()
   const startX = e.clientX
   const minW = chipColMinW(col)
   const startW = colWidth(type, col)
-
   const onMove = (ev) => {
-    const dx = ev.clientX - startX
-    const next = clamp(startW + dx, minW, CHIP_COL_MAX)
-    colWidthOverrides[type][col.key] = Math.round(next)
+    colWidthOverrides[type][col.key] = Math.round(clamp(startW + ev.clientX - startX, minW, CHIP_COL_MAX))
   }
   const onUp = () => {
     document.removeEventListener('mousemove', onMove)
@@ -479,7 +477,6 @@ function startColResize(type, col, e) {
     document.body.style.cursor = ''
     document.body.style.userSelect = ''
   }
-
   document.body.style.cursor = 'col-resize'
   document.body.style.userSelect = 'none'
   document.addEventListener('mousemove', onMove)
@@ -490,11 +487,9 @@ const frozenTotalWidth = computed(() => frozenCols.reduce((a, c) => a + c.width,
 
 const filteredRows = computed(() => {
   let result = rows.value
-
   for (const f of specFilters) {
     if (f.value) result = result.filter(r => String(r[f.key]) === f.value)
   }
-
   if (filterDate.value) {
     const [fy, fm] = filterDate.value.split('-').map(Number)
     result = result.filter(row => {
@@ -507,7 +502,6 @@ const filteredRows = computed(() => {
       return dates.some(d => d && (d.y > fy || (d.y === fy && d.m >= fm)))
     })
   }
-
   return result
 })
 
@@ -521,16 +515,12 @@ function parseChipDate(str) {
 
 function cellStyle(row, col) {
   const color = cellColors.value[`${row.__idx}_${col.key}`]
-  return color ? { backgroundColor: color } : {}
+  if (color) return { backgroundColor: color, color: '#000000' }
+  return {}
 }
 
-function pinnedCountByType(type) {
-  return type === 'amd' ? amdPinnedCount.value : intelPinnedCount.value
-}
-
-function isPinnedChipCol(type, index) {
-  return index < pinnedCountByType(type)
-}
+function pinnedCountByType(type) { return type === 'amd' ? amdPinnedCount.value : intelPinnedCount.value }
+function isPinnedChipCol(type, index) { return index < pinnedCountByType(type) }
 
 function pinnedLeftPx(type, index) {
   const cols = colsByType(type)
@@ -542,7 +532,6 @@ function pinnedLeftPx(type, index) {
 
 function chipStickyStyle(type, index, isHeader = false) {
   if (!isPinnedChipCol(type, index)) return {}
-
   return {
     position: 'sticky',
     left: `${pinnedLeftPx(type, index)}px`,
@@ -550,15 +539,12 @@ function chipStickyStyle(type, index, isHeader = false) {
   }
 }
 
-function groupHeaderStyle(type) {
-  const pinnedCount = pinnedCountByType(type)
-  if (!pinnedCount) return {}
-
-  return {
-    position: 'sticky',
-    left: '0px',
-    zIndex: 46,
-  }
+function extractRgb(ws, r, c) {
+  const cell = ws[XLSX.utils.encode_cell({ r, c })]
+  if (!cell?.s?.fgColor?.rgb) return null
+  const rgb = cell.s.fgColor.rgb
+  if (!rgb || rgb === 'FFFFFF' || rgb === '000000' || rgb.length !== 6) return null
+  return `#${rgb}`
 }
 
 /* ── Excel Upload ─────────────────────────────────────────────── */
@@ -581,12 +567,11 @@ function parseExcel(buffer) {
   const range = XLSX.utils.decode_range(ws['!ref'])
   const rawRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
 
-  // Find header row
-  let headerRowIdx = 1
+  // Find header row: row containing DIMM / Intel / AMD group labels
+  let headerRowIdx = 0
   for (let r = 0; r < Math.min(5, rawRows.length); r++) {
     if (rawRows[r].some(c =>
         String(c).toUpperCase() === 'DIMM' ||
-        String(c).toUpperCase() === 'RDIMM' ||
         String(c).toUpperCase().includes('PRODUCT'))) {
       headerRowIdx = r; break
     }
@@ -615,37 +600,37 @@ function parseExcel(buffer) {
     if (amdStart >= 0) amdEnd = headerRow.length - 1
   }
 
-  // Find date row
-  let chipNameRowIdx = headerRowIdx
-  let dateRowIdx = -1
-  for (let r = rawRows.length - 1; r > headerRowIdx; r--) {
-    if (rawRows[r].some(c => /\d{1,2}\s*'\d{2}/.test(String(c)))) {
-      dateRowIdx = r; break
-    }
-  }
+  // Chip names are on the row BELOW the header/group row
+  const chipNameRowIdx = headerRowIdx + 1
 
-  const dataStartRow = headerRowIdx + 1
+  // Dates are on the row below chip names
+  const dateRowIdx = headerRowIdx + 2
+
+  // Data rows start after the date row
+  const dataStartRow = headerRowIdx + 3
+
   const SPEC_COUNT = frozenCols.length
+  const specKeys   = ['dimm', 'product', 'ver', 'density', 'org', 'speed']
   const chipColDefs = []
 
   if (intelStart >= SPEC_COUNT) {
-    for (let c = intelStart; c <= intelEnd && c < headerRow.length; c++) {
-      const chip = String(rawRows[chipNameRowIdx][c] || rawRows[headerRowIdx][c] || `col${c}`)
-      const date = dateRowIdx >= 0 ? String(rawRows[dateRowIdx][c] || '') : ''
+    for (let c = intelStart; c <= intelEnd && c < (rawRows[chipNameRowIdx]?.length ?? 0); c++) {
+      const chip = String(rawRows[chipNameRowIdx][c] || `col${c}`)
+      const date = String(rawRows[dateRowIdx]?.[c] || '')
       chipColDefs.push({ key: `chip_${c}`, chip, date, colIdx: c, type: 'intel' })
     }
   }
   if (amdStart >= SPEC_COUNT) {
-    for (let c = amdStart; c <= amdEnd && c < headerRow.length; c++) {
-      const chip = String(rawRows[chipNameRowIdx][c] || rawRows[headerRowIdx][c] || `col${c}`)
-      const date = dateRowIdx >= 0 ? String(rawRows[dateRowIdx][c] || '') : ''
+    for (let c = amdStart; c <= amdEnd && c < (rawRows[chipNameRowIdx]?.length ?? 0); c++) {
+      const chip = String(rawRows[chipNameRowIdx][c] || `col${c}`)
+      const date = String(rawRows[dateRowIdx]?.[c] || '')
       chipColDefs.push({ key: `chip_${c}`, chip, date, colIdx: c, type: 'amd' })
     }
   }
 
   if (chipColDefs.length === 0) {
     for (let c = SPEC_COUNT; c < headerRow.length; c++) {
-      const chip = String(headerRow[c] || `col${c}`)
+      const chip = String(rawRows[chipNameRowIdx]?.[c] || headerRow[c] || `col${c}`)
       chipColDefs.push({ key: `chip_${c}`, chip, date: '', colIdx: c, type: 'intel' })
     }
   }
@@ -657,26 +642,43 @@ function parseExcel(buffer) {
     ...(amdCols.length   ? [{ name: 'AMD',   type: 'amd',   cols: amdCols   }] : []),
   ]
 
+  // ── Extract header colors ──────────────────────────────────────
+  headerColors.specHeaders = frozenCols.map((_, ci) => extractRgb(ws, headerRowIdx, ci))
+  headerColors.intelGroup  = intelStart >= 0 ? extractRgb(ws, headerRowIdx, intelStart) : null
+  headerColors.amdGroup    = amdStart   >= 0 ? extractRgb(ws, headerRowIdx, amdStart)   : null
+  headerColors.chipCols = {}
+  headerColors.dateCols = {}
+  for (const colDef of chipColDefs) {
+    const chipBg = extractRgb(ws, chipNameRowIdx, colDef.colIdx)
+    const dateBg = extractRgb(ws, dateRowIdx,     colDef.colIdx)
+    if (chipBg) headerColors.chipCols[colDef.key] = chipBg
+    if (dateBg) headerColors.dateCols[colDef.key] = dateBg
+  }
+
+  // ── Extract data row colors ────────────────────────────────────
   const newRows = []
   const newColors = {}
-  const specKeys = ['dimm', 'product', 'ver', 'density', 'org', 'speed']
 
   for (let r = dataStartRow; r <= range.e.r; r++) {
     const rawRow = rawRows[r]
     if (!rawRow || rawRow.every(c => c === '' || c === null || c === undefined)) continue
     const row = { __idx: r }
-    specKeys.forEach((k, i) => { row[k] = String(rawRow[i] || '') })
+
+    // Spec columns
+    specKeys.forEach((k, i) => {
+      row[k] = String(rawRow[i] || '')
+      const bg = extractRgb(ws, r, i)
+      if (bg) newColors[`${r}_${k}`] = bg
+    })
+
+    // Chip columns
     for (const colDef of chipColDefs) {
       const val = rawRow[colDef.colIdx]
-      row[colDef.key] = val !== undefined && val !== '' ? String(val) : ''
-      const cellAddr = XLSX.utils.encode_cell({ r, c: colDef.colIdx })
-      const cell = ws[cellAddr]
-      if (cell?.s?.fgColor?.rgb) {
-        const rgb = cell.s.fgColor.rgb
-        if (rgb && rgb !== 'FFFFFF' && rgb !== '000000' && rgb.length === 6)
-          newColors[`${r}_${colDef.key}`] = `#${rgb}`
-      }
+      row[colDef.key] = (val !== undefined && val !== '') ? String(val) : ''
+      const bg = extractRgb(ws, r, colDef.colIdx)
+      if (bg) newColors[`${r}_${colDef.key}`] = bg
     }
+
     newRows.push(row)
   }
 
@@ -806,8 +808,6 @@ function downloadExcel() {
 /* ══════════════════════════════════════════════════════════════
    3-Pane Layout
    ══════════════════════════════════════════════════════════════ */
-
-/* Outer layout: flex column, vertically scrollable */
 .cv-layout {
   flex: 1;
   display: flex;
@@ -833,46 +833,27 @@ function downloadExcel() {
 }
 
 /* ── Body row ───────────────────────────────────────────────── */
-.cv-body-row {
-  display: flex;
-  flex: 1;
-}
+.cv-body-row { display: flex; flex: 1; }
 
-/* ── Frozen pane (header + body) ────────────────────────────── */
+/* ── Frozen pane ────────────────────────────────────────────── */
 .cv-head-frozen {
-  flex: none;
-  overflow: hidden;
+  flex: none; overflow: hidden;
   border-right: 2px solid #1e3a5f;
   background: #0f1729;
 }
 .cv-body-frozen {
-  flex: none;
-  overflow: hidden;
+  flex: none; overflow: hidden;
   border-right: 2px solid #1e3a5f;
   background: #0d1220;
 }
 
-/* ── Chip panes (Intel / AMD) — equal 50% split ─────────────── */
-.cv-head-chip {
-  flex: 1;
-  overflow: hidden;       /* header does NOT scroll — synced via scrollLeft in JS */
-  min-width: 0;
-}
-.cv-head-chip + .cv-head-chip {
-  border-left: 2px solid #2d1a4a;
-}
+/* ── Chip panes ─────────────────────────────────────────────── */
+.cv-head-chip { flex: 1; overflow: hidden; min-width: 0; }
+.cv-head-chip + .cv-head-chip { border-left: 2px solid #2d1a4a; }
 
-.cv-body-chip {
-  flex: 1;
-  overflow-x: auto;       /* ← independent horizontal scroll per group */
-  overflow-y: hidden;
-  min-width: 0;
-}
-.cv-body-chip + .cv-body-chip {
-  border-left: 2px solid #2d1a4a;
-}
+.cv-body-chip { flex: 1; overflow-x: auto; overflow-y: hidden; min-width: 0; }
+.cv-body-chip + .cv-body-chip { border-left: 2px solid #2d1a4a; }
 
-/* Scrollbar for chip panes */
 .cv-body-chip::-webkit-scrollbar { height: 8px; }
 .cv-body-chip::-webkit-scrollbar-track { background: #111218; }
 .cv-body-chip::-webkit-scrollbar-thumb { background: #2d3148; border-radius: 4px; }
@@ -890,7 +871,7 @@ function downloadExcel() {
 
 /* ── TH ─────────────────────────────────────────────────────── */
 .cv-th {
-  padding: 8px 10px;
+  padding: 0 10px;
   text-align: center;
   vertical-align: middle;
   font-weight: 700;
@@ -900,110 +881,52 @@ function downloadExcel() {
   border-right: 1px solid #1a2035;
   color: #94a3b8;
   background: #13141d;
+  box-sizing: border-box;
 }
 .cv-th:last-child { border-right: none; }
 
-/* 칩 서브헤더: 절대 잘림 없음 */
-.cv-th--chip-cell {
-  overflow: visible;
-  white-space: nowrap;
-}
+/* Header row heights */
+.cv-hrow--g  .cv-th { height: 34px; }
+.cv-hrow--cn .cv-th { height: 28px; font-weight: 700; font-size: 10px; position: relative; }
+.cv-hrow--dt .cv-th { height: 20px; font-size: 9px; color: #6b7280; }
 
-.cv-th--spec {
-  background: #0f1729;
-  color: #60a5fa;
-}
-.cv-th--intel {
-  background: #0d1f38;
-  color: #93c5fd;
-}
-.cv-th--amd {
-  background: #1a0f2e;
-  color: #c4b5fd;
-}
-.cv-th--sub {
-  position: relative;
-  font-weight: 600;
-  font-size: 9px;
-}
-.cv-th--group {
-  position: relative;
-}
-.cv-th--group-pinned {
-  box-shadow: 1px 0 0 #1e3a5f;
-}
-.cv-hrow--g .cv-th {
-  height: 34px;
-  padding-top: 0;
-  padding-bottom: 0;
-}
-.cv-hrow--s .cv-th {
-  height: 40px;
-  padding-top: 6px;
-  padding-bottom: 6px;
-}
-.cv-th-chip { font-weight: 700; letter-spacing: 0.04em; }
-.cv-th-date { font-size: 8px; color: #4b5563; margin-top: 2px; }
+.cv-th--spec  { background: #0f1729; color: #60a5fa; }
+.cv-th--intel { background: #0d1f38; color: #93c5fd; }
+.cv-th--amd   { background: #1a0f2e; color: #c4b5fd; }
+.cv-th--date  { background: #0a1525; color: #4b5563; }
+.cv-th--amd.cv-th--date { background: #150a26; }
+
+.cv-th--group { position: relative; }
 
 .cv-col-resizer {
-  position: absolute;
-  top: 0;
-  right: -4px;
-  width: 8px;
-  height: 100%;
-  cursor: col-resize;
-  background: transparent;
+  position: absolute; top: 0; right: -4px;
+  width: 8px; height: 100%; cursor: col-resize; background: transparent;
 }
 .cv-col-resizer::after {
-  content: '';
-  position: absolute;
-  top: 8px;
-  bottom: 8px;
-  left: 3px;
-  width: 2px;
-  border-radius: 2px;
-  background: rgba(148, 163, 184, 0.25);
+  content: ''; position: absolute; top: 4px; bottom: 4px; left: 3px;
+  width: 2px; border-radius: 2px; background: rgba(148,163,184,0.25);
 }
-.cv-col-resizer:hover::after {
-  background: rgba(148, 163, 184, 0.55);
+.cv-col-resizer:hover::after { background: rgba(148,163,184,0.55); }
+
+.cv-chip-sticky { position: sticky; }
+.cv-th.cv-chip-sticky, .cv-td.cv-chip-sticky {
+  box-shadow: 1px 0 0 rgba(30,58,95,0.95);
+}
+.cv-th--amd.cv-chip-sticky, .cv-td--amd.cv-chip-sticky {
+  box-shadow: 1px 0 0 rgba(88,28,135,0.95);
 }
 
-/* Ghost content in frozen header row 2 — invisible but occupies height */
-.cv-th--ghost {
-  visibility: hidden;
-  user-select: none;
-  pointer-events: none;
-}
-/* Frozen spacer cells: no bottom border so it doesn't add visual noise */
-.cv-th--spacer {
-  border-bottom: none !important;
-}
-
-.cv-chip-sticky {
-  position: sticky;
-}
-.cv-th.cv-chip-sticky,
-.cv-td.cv-chip-sticky {
-  box-shadow: 1px 0 0 rgba(30, 58, 95, 0.95);
-}
-.cv-th--amd.cv-chip-sticky,
-.cv-td--amd.cv-chip-sticky {
-  box-shadow: 1px 0 0 rgba(88, 28, 135, 0.95);
-}
-
-/* ── TR ─────────────────────────────────────────────────────── */
+/* ── TR / TD ─────────────────────────────────────────────────── */
 .cv-tr { transition: background 0.1s; }
-.cv-tr--alt .cv-td:not(.cv-td--spec) { background: rgba(255,255,255,0.013); }
 
-/* ── TD ─────────────────────────────────────────────────────── */
 .cv-td {
   padding: 5px 10px;
   height: 32px;
-  border-bottom: 1px solid #131520;
-  border-right: 1px solid #131520;
+  border-bottom: 1px solid #1a1c24;
+  border-right: 1px solid #1a1c24;
   text-align: center;
   vertical-align: middle;
-  background: #0f1018;
+  background: #111318;
   color: #c8ccd6;
   white-space: nowrap;
   box-sizing: border-box;
@@ -1017,26 +940,17 @@ function downloadExcel() {
 }
 .cv-td--intel { color: #93c5fd; }
 .cv-td--amd   { color: #c4b5fd; }
-.cv-td--intel.cv-chip-sticky { background: #0f1018; }
-.cv-td--amd.cv-chip-sticky { background: #0f1018; }
+.cv-td--intel.cv-chip-sticky { background: #111318; }
+.cv-td--amd.cv-chip-sticky   { background: #111318; }
 
-/* Empty cell */
+/* Empty cell: dark gray, no decorations */
 .cv-td--empty {
-  background: #0c0d12 !important;
-  color: transparent;
-}
-.cv-td--empty::after {
-  content: '';
-  display: inline-block;
-  width: 14px; height: 14px;
-  background: #1a1d2a;
-  border-radius: 2px;
+  background: #222428 !important;
+  color: transparent !important;
 }
 
 .cv-td--nodata {
-  text-align: center;
-  padding: 32px;
-  color: #374151;
-  font-size: 13px;
+  text-align: center; padding: 32px;
+  color: #374151; font-size: 13px;
 }
 </style>
