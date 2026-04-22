@@ -32,8 +32,8 @@ dependencies {
     // H2 — Oracle 설치 전 개발/테스트용 인메모리 DB
     runtimeOnly("com.h2database:h2")
 
-    // Oracle JDBC — Oracle 준비 시 주석 해제
-    // runtimeOnly("com.oracle.database.jdbc:ojdbc11:21.11.0.0")
+    // Oracle JDBC
+    runtimeOnly("com.oracle.database.jdbc:ojdbc11:21.11.0.0")
 
     // Lombok
     compileOnly("org.projectlombok:lombok")

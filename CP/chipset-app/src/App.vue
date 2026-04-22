@@ -3,8 +3,6 @@ import { shallowRef } from 'vue'
 import HomeScreen from './components/HomeScreen.vue'
 import ChipsetValidation from './components/ChipsetValidation.vue'
 import ChipsetUploadView from './components/ChipsetUploadView.vue'
-import ChipsetValidationGrid from './components/ChipsetValidationGrid.vue'
-
 const NAV_HEIGHT = 44
 
 const apps = [
@@ -14,12 +12,6 @@ const apps = [
     description: '로컬 Excel 직접 파싱 (DB 없음)',
     component: ChipsetValidation,
   },
-  {
-    id: 'chipset-validation-grid',
-    name: 'ChipsetValidationGrid.vue',
-    description: '로컬 Excel 직접 파싱 (DB 없음)',
-    component: ChipsetValidationGrid,
-  },  
   {
     id: 'chipset-db',
     name: 'ChipsetUploadView.vue',

@@ -21,8 +21,8 @@
 | `src/main.js` | Tachyons CSS import 완료 (`import 'tachyons/css/tachyons.min.css'`) |
 | `src/components/HomeScreen.vue` | 런처 화면 — 컴포넌트 카드 목록 |
 | `src/components/ChipsetValidation.vue` | 로컬 Excel 직접 파싱 (DB 없음) |
-| `src/components/ChipsetUploadView.vue` | **★ DB 연동 화면** — 업로드/조회/히스토리 |
-| `src/docs/design.md` | 이 설계 문서 |
+| `src/components/ChipsetUploadView.vue` | **★ DB 연동 화면** — SERVER/CLIENT/MOBILE/RAW_DATA 탭, 업로드/조회/히스토리 |
+| `docs/design.md` | 이 설계 문서 |
 
 #### Java 백엔드 (`chipset-app/backend/`)
 
@@ -31,20 +31,22 @@
 | `backend/build.gradle.kts` | Gradle 빌드 설정 (H2, POI, MyBatis, Lombok) |
 | `backend/settings.gradle.kts` | 프로젝트명: chipset-backend |
 | `backend/src/main/resources/application.yml` | H2 기본, Oracle 전환 주석 포함 |
-| `backend/src/main/resources/schema.sql` | H2용 DDL (서버 시작 시 자동 실행) |
-| `backend/src/main/resources/mapper/ChipsetMapper.xml` | MyBatis SQL (메인+히스토리) |
+| `backend/src/main/resources/schema.sql` | H2용 DDL (4파일타입 + RAW_DATA 테이블, 히스토리 포함) |
+| `backend/src/main/resources/mapper/ChipsetMapper.xml` | MyBatis SQL (메인+히스토리, 파일타입별 DELETE/SELECT) |
 | `backend/src/main/java/com/chipset/ChipsetApplication.java` | Spring Boot 진입점 |
 | `backend/src/main/java/com/chipset/config/WebConfig.java` | CORS (5173 허용) |
-| `backend/src/main/java/com/chipset/controller/ChipsetController.java` | REST API 4개 |
-| `backend/src/main/java/com/chipset/service/ChipsetService.java` | 업로드/조회 비즈니스 로직 |
+| `backend/src/main/java/com/chipset/controller/ChipsetController.java` | REST API 6개 (upload, matrix, rawdata, history, history/{seq}, rawdata/history/{seq}) |
+| `backend/src/main/java/com/chipset/service/ChipsetService.java` | 업로드/조회 비즈니스 로직 (4가지 파일타입 대응) |
 | `backend/src/main/java/com/chipset/mapper/ChipsetMapper.java` | MyBatis 인터페이스 |
-| `backend/src/main/java/com/chipset/util/ChipsetExcelParser.java` | POI 파서 (동적 벤더) |
-| `backend/src/main/java/com/chipset/model/ChipsetUpload.java` | 업로드 메타 모델 |
+| `backend/src/main/java/com/chipset/util/ChipsetExcelParser.java` | POI 파서 — SERVER/CLIENT/MOBILE/RAW_DATA 자동 감지 |
+| `backend/src/main/java/com/chipset/model/ChipsetUpload.java` | 업로드 메타 모델 (FILE_TYPE 포함) |
 | `backend/src/main/java/com/chipset/model/ChipsetChipCol.java` | 칩 컬럼 모델 |
-| `backend/src/main/java/com/chipset/model/ChipsetRow.java` | 스펙 행 모델 |
+| `backend/src/main/java/com/chipset/model/ChipsetRow.java` | 스펙 행 모델 (Mobile: dimm=PKG, org=P/N, ver=CodeName 재사용) |
 | `backend/src/main/java/com/chipset/model/ChipsetCell.java` | 셀 값 모델 |
-| `backend/src/main/java/com/chipset/model/UploadResult.java` | 업로드 응답 모델 |
+| `backend/src/main/java/com/chipset/model/UploadResult.java` | 업로드 응답 모델 (fileType 포함) |
 | `backend/src/main/java/com/chipset/model/MatrixResponse.java` | 매트릭스 조회 응답 모델 |
+| `backend/src/main/java/com/chipset/model/RawDataRow.java` | Raw_Data 행 모델 (val1~3 세트) |
+| `backend/src/main/java/com/chipset/model/RawDataResponse.java` | Raw_Data 조회 응답 모델 |
 
 #### npm 패키지 (`chipset-app/`)
 
@@ -63,9 +65,9 @@
 | 순서 | 항목 | 비고 |
 |------|------|------|
 | ~~1~~ | ~~`src/main.js`에 tachyons import 추가~~ | ✅ 완료 |
-| 2 | IntelliJ에서 `backend/` Gradle import | Gradle wrapper 자동 생성됨 |
-| 3 | 백엔드 첫 실행 확인 (H2 모드) | `http://localhost:8080/h2-console` |
-| 4 | 통합 테스트 (Excel 업로드 → H2 → 화면 출력) | `ChipsetValidation_Fixed.xlsx` 사용 |
+| ~~2~~ | ~~멀티 파일타입 지원 (14번 섹션 분석 → 구현)~~ | ✅ 완료 (SERVER/CLIENT/MOBILE/RAW_DATA) |
+| 3 | IntelliJ에서 `backend/` Gradle import 후 백엔드 실행 확인 | `http://localhost:8080/h2-console` |
+| 4 | 통합 테스트 (4가지 Excel 각각 업로드 → H2 → 화면 출력) | Server/Client/Mobile/Raw_Data.xlsx 사용 |
 | 5 | Oracle 21c XE 설치 (시간 될 때) | 이 문서 4번 섹션 |
 | 6 | Oracle DDL 실행 후 application.yml 전환 | 아래 "Oracle 전환" 참고 |
 
@@ -324,6 +326,7 @@ Tomcat started on port(s): 8080
 11. [MyBatis Mapper XML](#11-mybatis-mapper-xml)
 12. [Vue 프론트엔드](#12-vue-프론트엔드)
 13. [제공 코드 버그 목록](#13-제공-코드-버그-목록)
+14. [멀티 파일 타입 설계 분석](#14-멀티-파일-타입-설계-분석)
 
 ---
 
@@ -2135,4 +2138,275 @@ const apps = [
 | 위치 | 원본 | 수정 | 원인 |
 |------|------|------|------|
 | SQL 키워드 | `form maru_ca_...` | `FROM maru_ca_...` | 오타 (`form` → `FROM`) |
+
+---
+
+## 14. 멀티 파일 타입 설계 분석
+
+> 분석일: 2026-04-22  
+> 대상 파일: `data/Server.xlsx`, `data/Client.xlsx`, `data/Mobile.xlsx`, `data/Raw_Data.xlsx`
+
+---
+
+### 14-1. 파일 구조 비교
+
+| 항목 | Server.xlsx | Client.xlsx | Mobile.xlsx | Raw_Data.xlsx |
+|------|-------------|-------------|-------------|---------------|
+| **분류** | Server 검증 매트릭스 | Client 검증 매트릭스 | 모바일 검증 매트릭스 | 검증 추적 시트 |
+| **고정 좌측 컬럼** | DIMM, Product(Ver.), Ver., Density, Org, Speed | 동일 | PKG, Density, Product, P/N, Code Name(Ver.) | Company, Seg, Chipset, SoC CS, Part Number, DRAM PROCES, Flash Process, Density, MLC/TLC, PKG |
+| **벤더 그룹** | Intel, AMD (서버 칩셋) | Intel, AMD (클라이언트 칩셋) | Qualcomm (SM-series) | 없음 |
+| **칩셋 헤더 구조** | 칩명 행 + 출시일 행 | 동일 | 동일 | 없음 (Target AP / Sorting KEY / Validation Status 섹션) |
+| **셀 데이터 성격** | 검증일자 + 배경색 | 동일 | VP/VL/VH 코드 + 배경색 | 날짜, 담당자, Pass/Fail, Remark |
+| **형태 동일 여부** | ✅ Server ↔ Client 동일 구조 | ✅ Server와 동일 | ⚠️ 좌측 컬럼 상이 | ❌ 완전히 다른 구조 |
+
+**결론: 4개 파일 중 2가지 패턴**
+- **패턴 A (Matrix형)**: Server.xlsx = Client.xlsx = Mobile.xlsx — 칩셋 매트릭스 구조 (좌측 스펙 + 우측 칩셋 열)
+- **패턴 B (Tracking형)**: Raw_Data.xlsx — 섹션별 그룹 헤더 + 검증 이력 행
+
+---
+
+### 14-2. 현재 DB 스키마 적합성 평가
+
+현재 스키마는 `Server.xlsx` 한 가지만을 기준으로 설계되어 있습니다.
+
+| 파일 | 현재 스키마 지원 여부 | 문제점 |
+|------|----------------------|--------|
+| **Server.xlsx** | ✅ 완전 지원 | 설계 기준 파일 |
+| **Client.xlsx** | ✅ 완전 지원 | Server와 동일 구조 |
+| **Mobile.xlsx** | ⚠️ 부분 지원 | `CHIPSET_ROW`의 컬럼(DIMM/ORG/SPEED)이 Mobile 컬럼(PKG/P/N/CODE_NAME)과 불일치 |
+| **Raw_Data.xlsx** | ❌ 미지원 | 칩셋 매트릭스 구조 자체가 없어 현재 스키마에 저장 불가 |
+
+**Mobile.xlsx 불일치 상세:**
+
+```
+현재 CHIPSET_ROW 컬럼     Mobile.xlsx 실제 컬럼
+─────────────────────     ──────────────────────
+DIMM          ←→  PKG            (의미 다름)
+PRODUCT       ←→  Product        (OK)
+VER           ←→  Code Name      (의미 다름)
+DENSITY       ←→  Density        (OK)
+ORG           ←→  P/N            (의미 다름)
+SPEED         ←→  (없음)         (Mobile엔 Speed 없음)
+```
+
+**핵심 문제: 메인 테이블 덮어쓰기 방식**
+
+현재 업로드 시 `CHIPSET_*` 테이블 전체를 DELETE 후 INSERT합니다.  
+→ Server를 올린 후 Client를 올리면 Server 데이터가 삭제됩니다.  
+→ 4가지 파일 타입이 서로 독립적으로 관리되어야 합니다.
+
+---
+
+### 14-3. 파일 자동 감지 규칙
+
+헤더 행의 키워드 패턴으로 파일 타입을 자동 판별할 수 있습니다.
+
+| 파일 타입 | 감지 조건 | 신뢰도 |
+|-----------|-----------|--------|
+| **SERVER** | 고정 컬럼에 "DIMM" + "Org" + "Speed" 존재 AND 칩셋에 "SPR", "EMR", "GNR", "SRF" 등 서버 코드명 | 높음 |
+| **CLIENT** | 고정 컬럼에 "DIMM" + "Org" + "Speed" 존재 AND 칩셋에 "MTL", "RPL", "ADL", "LNL" 등 클라이언트 코드명 | 높음 |
+| **SERVER/CLIENT 공통** | 고정 컬럼에 "DIMM" + "Org" + "Speed" 존재 (칩셋명 무관) | 중간 → 파일명으로 2차 판별 |
+| **MOBILE** | 고정 컬럼에 "PKG" + "P/N" + "Code Name" 존재 OR Qualcomm 벤더 감지 | 높음 |
+| **RAW_DATA** | Row 1에 "Target AP" + "Sorting KEY" + "Validation Status" 섹션 헤더 존재 | 높음 |
+
+**자동 감지 우선순위:**
+```
+1. Row 1의 병합 셀 텍스트 확인 → "Target AP" 있으면 RAW_DATA
+2. 고정 컬럼 헤더 확인 → "PKG" + "P/N" 있으면 MOBILE
+3. 고정 컬럼 헤더 확인 → "DIMM" + "Org" 있으면 SERVER 또는 CLIENT
+   └─ 칩셋명 또는 파일명으로 SERVER vs CLIENT 구분
+4. 감지 실패 시 → 사용자에게 타입 선택 요청
+```
+
+**Server vs Client 구분 불확실 시 파일명 기준:**
+
+| 파일명 패턴 | 타입 |
+|------------|------|
+| `*Server*`, `*server*` | SERVER |
+| `*Client*`, `*client*` | CLIENT |
+| `*Mobile*`, `*mobile*` | MOBILE |
+| `*Raw*`, `*raw*`, `*RawData*` | RAW_DATA |
+
+---
+
+### 14-4. 권장 DB 스키마 변경
+
+#### (1) CHIPSET_UPLOAD에 FILE_TYPE 컬럼 추가
+
+```sql
+ALTER TABLE CHIPSET_UPLOAD ADD (
+    FILE_TYPE  VARCHAR2(20)  DEFAULT 'SERVER'  -- 'SERVER','CLIENT','MOBILE','RAW_DATA'
+);
+ALTER TABLE CHIPSET_UPLOAD_H ADD (
+    FILE_TYPE  VARCHAR2(20)
+);
+```
+
+#### (2) Mobile용 ROW 컬럼 추가 (CHIPSET_ROW 확장)
+
+```sql
+ALTER TABLE CHIPSET_ROW ADD (
+    PKG         VARCHAR2(200),   -- Mobile: PKG 스펙 (LP5X 496b 등)
+    PN          VARCHAR2(200),   -- Mobile: Part Number
+    CODE_NM     VARCHAR2(100)    -- Mobile: Code Name (VP/VL/VH)
+);
+ALTER TABLE CHIPSET_ROW_H ADD (
+    PKG         VARCHAR2(200),
+    PN          VARCHAR2(200),
+    CODE_NM     VARCHAR2(100)
+);
+```
+
+#### (3) Raw_Data 전용 테이블 신규 생성
+
+```sql
+-- Raw_Data 업로드 메타 (CHIPSET_UPLOAD의 FILE_TYPE='RAW_DATA' 행과 연결)
+CREATE TABLE RAWDATA_ROW (
+    RAWDATA_ROW_SEQ  NUMBER          NOT NULL,
+    UPLOAD_SEQ       NUMBER          NOT NULL,   -- FK → CHIPSET_UPLOAD
+    COMPANY          VARCHAR2(100),
+    SEG              VARCHAR2(100),
+    CHIPSET          VARCHAR2(200),
+    SOC_CS           VARCHAR2(200),
+    PART_NUMBER      VARCHAR2(200),
+    DRAM_PROCESS     VARCHAR2(100),
+    FLASH_PROCESS    VARCHAR2(100),
+    DENSITY          VARCHAR2(50),
+    MLC_TLC          VARCHAR2(50),
+    PKG              VARCHAR2(200),
+    -- Validation Status (최대 3세트)
+    VAL1_DATE        VARCHAR2(20),
+    VAL1_ENG         VARCHAR2(50),
+    VAL1_STATUS      VARCHAR2(50),
+    VAL1_REMARK      VARCHAR2(500),
+    VAL2_DATE        VARCHAR2(20),
+    VAL2_ENG         VARCHAR2(50),
+    VAL2_STATUS      VARCHAR2(50),
+    VAL2_REMARK      VARCHAR2(500),
+    VAL3_DATE        VARCHAR2(20),
+    VAL3_ENG         VARCHAR2(50),
+    SORT_ORDER       NUMBER          DEFAULT 0,
+    CONSTRAINT PK_RAWDATA_ROW PRIMARY KEY (RAWDATA_ROW_SEQ)
+);
+
+CREATE TABLE RAWDATA_ROW_H (
+    RAWDATA_ROW_H_SEQ  NUMBER  NOT NULL,
+    RAWDATA_ROW_SEQ    NUMBER  NOT NULL,
+    UPLOAD_SEQ         NUMBER  NOT NULL,
+    COMPANY          VARCHAR2(100),
+    SEG              VARCHAR2(100),
+    CHIPSET          VARCHAR2(200),
+    SOC_CS           VARCHAR2(200),
+    PART_NUMBER      VARCHAR2(200),
+    DRAM_PROCESS     VARCHAR2(100),
+    FLASH_PROCESS    VARCHAR2(100),
+    DENSITY          VARCHAR2(50),
+    MLC_TLC          VARCHAR2(50),
+    PKG              VARCHAR2(200),
+    VAL1_DATE        VARCHAR2(20),  VAL1_ENG  VARCHAR2(50),
+    VAL1_STATUS      VARCHAR2(50),  VAL1_REMARK VARCHAR2(500),
+    VAL2_DATE        VARCHAR2(20),  VAL2_ENG  VARCHAR2(50),
+    VAL2_STATUS      VARCHAR2(50),  VAL2_REMARK VARCHAR2(500),
+    VAL3_DATE        VARCHAR2(20),  VAL3_ENG  VARCHAR2(50),
+    SORT_ORDER       NUMBER,
+    CONSTRAINT PK_RAWDATA_ROW_H PRIMARY KEY (RAWDATA_ROW_H_SEQ)
+);
+
+CREATE SEQUENCE SQ_RAWDATA_ROW   START WITH 1 INCREMENT BY 1 NOCACHE;
+CREATE SEQUENCE SQ_RAWDATA_ROW_H START WITH 1 INCREMENT BY 1 NOCACHE;
+CREATE INDEX IDX_RAWDATA_ROW_UPLOAD   ON RAWDATA_ROW   (UPLOAD_SEQ);
+CREATE INDEX IDX_RAWDATA_ROW_H_UPLOAD ON RAWDATA_ROW_H (UPLOAD_SEQ);
+```
+
+#### (4) 메인 테이블 삭제 방식 변경
+
+현재: 업로드마다 전체 DELETE → 타입별 독립 DELETE로 변경
+
+```
+변경 전: DELETE CHIPSET_CELL (전체) → DELETE CHIPSET_ROW (전체) → ...
+변경 후: DELETE CHIPSET_CELL    WHERE ROW_SEQ IN (SELECT ROW_SEQ FROM CHIPSET_ROW WHERE UPLOAD_SEQ IN (SELECT UPLOAD_SEQ FROM CHIPSET_UPLOAD WHERE FILE_TYPE = #{fileType}))
+         DELETE CHIPSET_ROW     WHERE UPLOAD_SEQ IN (SELECT UPLOAD_SEQ FROM CHIPSET_UPLOAD WHERE FILE_TYPE = #{fileType})
+         DELETE CHIPSET_CHIP_COL WHERE UPLOAD_SEQ IN (...)
+         DELETE CHIPSET_UPLOAD  WHERE FILE_TYPE = #{fileType}
+```
+
+---
+
+### 14-5. API 변경 사항
+
+| 변경 항목 | 현재 | 변경 후 |
+|-----------|------|---------|
+| 업로드 API | `POST /api/chipset/upload` (타입 구분 없음) | `POST /api/chipset/upload?type={fileType}` 또는 자동 감지 |
+| 매트릭스 조회 | `GET /api/chipset/matrix` (단일) | `GET /api/chipset/matrix?type=SERVER` (타입별) |
+| 히스토리 목록 | `GET /api/chipset/history` (전체) | `GET /api/chipset/history?type=SERVER` (타입별 필터) |
+| Raw_Data 조회 | 없음 | `GET /api/rawdata/matrix`, `GET /api/rawdata/history` 신규 |
+
+**UploadResult 응답 확장:**
+```json
+{
+  "success": true,
+  "uploadSeq": 5,
+  "fileType": "MOBILE",
+  "detectedType": "MOBILE",
+  "rowCount": 8,
+  "colCount": 12,
+  "message": "업로드 완료 (파일타입: MOBILE, 행: 8, 칩: 12)"
+}
+```
+
+---
+
+### 14-6. UI 설계 권장안
+
+#### 옵션 A: 탭 분리 (권장)
+
+```
+┌──────────────────────────────────────────────┐
+│  [Server]  [Client]  [Mobile]  [Raw_Data]    │  ← 탭
+├──────────────────────────────────────────────┤
+│  [↑ XLSX 업로드]   히스토리: [드롭다운 ▼]    │
+│                                              │
+│  (선택된 탭에 해당하는 매트릭스 표시)          │
+└──────────────────────────────────────────────┘
+```
+
+**장점**: 명확한 구분, 실수 방지, 각 타입 히스토리 독립 관리  
+**단점**: UI 복잡도 증가
+
+#### 옵션 B: 단일 업로드 버튼 + 자동 감지
+
+```
+[↑ XLSX 업로드] 클릭
+    ↓
+파일 선택
+    ↓
+자동 감지: "Mobile.xlsx → 파일 타입: MOBILE 로 감지되었습니다. 업로드하시겠습니까?"
+    ↓ 확인
+업로드 완료 → 해당 타입 탭으로 자동 이동
+```
+
+**장점**: UX 단순, 파일명 실수에도 자동 교정  
+**단점**: 감지 실패 시 사용자 개입 필요
+
+#### 최종 권장: 옵션 A (탭 분리) + 자동 감지 보조
+
+업로드 버튼은 탭마다 별도로 두되, 업로드 시 파일을 자동 감지하여 **탭과 불일치하면 경고** 표시.
+
+```
+예: [Mobile] 탭에서 Server.xlsx를 업로드하면
+→ "Server.xlsx는 SERVER 형식으로 감지됩니다. [Server] 탭에서 업로드해주세요."
+```
+
+---
+
+### 14-7. 작업 우선순위
+
+| 순서 | 작업 | 영향 범위 | 난이도 |
+|------|------|-----------|--------|
+| 1 | `CHIPSET_UPLOAD`에 `FILE_TYPE` 컬럼 추가 | DB, Service, Mapper | 낮음 |
+| 2 | 메인 테이블 DELETE를 `FILE_TYPE` 기준으로 변경 | Service, Mapper XML | 낮음 |
+| 3 | `ChipsetExcelParser`에 파일 타입 자동 감지 로직 추가 | Parser | 중간 |
+| 4 | `CHIPSET_ROW`에 Mobile 컬럼(PKG, PN, CODE_NM) 추가 | DB, Model, Mapper | 중간 |
+| 5 | `RAWDATA_ROW` 신규 테이블 + API 구현 | DB, Service, Controller, Mapper | 높음 |
+| 6 | Vue UI 탭 분리 + 타입별 업로드/조회 화면 | Frontend | 중간 |
 | MyBatis 파라미터 | `"{item.biztripPlanSeq}` | `#{item.biztripPlanSeq}` | `"` → `#`, 닫는 `}` 누락 |

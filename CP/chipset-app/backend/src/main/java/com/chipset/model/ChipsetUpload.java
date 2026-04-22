@@ -7,6 +7,7 @@ import java.util.Date;
 public class ChipsetUpload {
     private Long   uploadSeq;
     private String fileNm;
+    private String fileType;   // SERVER | CLIENT | MOBILE | RAW_DATA
     private Date   uploadDt;
     private int    rowCount;
     private int    colCount;

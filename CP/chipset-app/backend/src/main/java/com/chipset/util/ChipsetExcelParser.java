@@ -10,66 +10,134 @@ import java.util.*;
 
 /**
  * Apache POI 표준 API로 Chipset Validation Excel을 파싱한다.
- * 벤더(Intel/AMD 등)는 병합 셀에서 동적으로 감지하므로 컬럼 구조가 바뀌어도 대응된다.
+ * Server / Client / Mobile / Raw_Data 4가지 파일 타입을 자동 감지한다.
  */
 public class ChipsetExcelParser {
 
-    private static final int SPEC_COL_COUNT = 6; // DIMM, Product, Ver., Density, Org, Speed
+    // ── 파일 타입 ──────────────────────────────────────────────────
+
+    public enum FileType {
+        SERVER, CLIENT, MOBILE, RAW_DATA;
+
+        /** 시트 상단 키워드와 파일명으로 타입 자동 감지 */
+        public static FileType detect(String filename, Sheet sheet, DataFormatter fmt) {
+            // 상위 4행 스캔
+            for (int r = 0; r <= Math.min(3, sheet.getLastRowNum()); r++) {
+                Row row = sheet.getRow(r);
+                if (row == null) continue;
+                for (Cell cell : row) {
+                    String v = fmt.formatCellValue(cell).trim().toUpperCase();
+                    if (v.contains("TARGET AP") || v.contains("SORTING KEY")) return RAW_DATA;
+                }
+            }
+            // PKG 가 스펙 영역 첫 컬럼에 있으면 Mobile
+            for (int r = 0; r <= Math.min(3, sheet.getLastRowNum()); r++) {
+                Row row = sheet.getRow(r);
+                if (row == null) continue;
+                for (int c = 0; c <= 1; c++) {
+                    Cell cell = row.getCell(c);
+                    if (cell == null) continue;
+                    String v = fmt.formatCellValue(cell).trim().toUpperCase();
+                    if ("PKG".equals(v)) return MOBILE;
+                }
+            }
+            // 파일명으로 SERVER vs CLIENT 구분
+            if (filename != null) {
+                String upper = filename.toUpperCase();
+                if (upper.contains("CLIENT")) return CLIENT;
+                if (upper.contains("MOBILE")) return MOBILE;
+                if (upper.contains("RAW"))    return RAW_DATA;
+            }
+            return SERVER;
+        }
+    }
 
     // ── 파싱 결과 DTO ───────────────────────────────────────────────
 
     public static class ParseResult {
-        public final List<ChipColDef> chipColDefs = new ArrayList<>();
-        public final List<RowData>    rows        = new ArrayList<>();
+        public FileType           fileType    = FileType.SERVER;
+        public final List<ChipColDef>      chipColDefs = new ArrayList<>();
+        public final List<RowData>         rows        = new ArrayList<>();
+        public final List<RawDataRowData>  rawDataRows = new ArrayList<>();
     }
 
-    /** Excel에서 읽은 칩 컬럼 정의 (DB seq 없음) */
     public static class ChipColDef {
         public String vendor;
-        public int    colIdx;     // 원본 Excel 컬럼 인덱스
+        public int    colIdx;
         public String chipNm;
         public String chipDt;
         public int    sortOrder;
     }
 
-    /** Excel에서 읽은 데이터 행 */
+    /** Server / Client / Mobile 공용 행 데이터 */
     public static class RowData {
+        // Server/Client: dimm=DIMM, product=Product, ver=Ver, density=Density, org=Org, speed=Speed
+        // Mobile:        dimm=PKG,  product=Product, ver=CodeName, density=Density, org=P/N, speed=""
         public String dimm, product, ver, density, org, speed;
         public int    sortOrder;
-        public final Map<Integer, String> cellValues = new HashMap<>(); // colIdx → 값
-        public final Map<Integer, String> cellColors = new HashMap<>(); // colIdx → #RRGGBB
+        public final Map<Integer, String> cellValues = new HashMap<>();
+        public final Map<Integer, String> cellColors = new HashMap<>();
+    }
+
+    /** Raw_Data 전용 행 데이터 */
+    public static class RawDataRowData {
+        public String company, seg, chipset, socCs, partNumber;
+        public String dramProcess, flashProcess, density, mlcTlc, pkg;
+        public String val1Date, val1Eng, val1Status, val1Remark;
+        public String val2Date, val2Eng, val2Status, val2Remark;
+        public String val3Date, val3Eng;
+        public int sortOrder;
     }
 
     // ── 진입점 ─────────────────────────────────────────────────────
 
-    public static ParseResult parse(File file) throws Exception {
+    public static ParseResult parse(File file, String filename) throws Exception {
         ParseResult result = new ParseResult();
 
         try (Workbook wb = WorkbookFactory.create(file)) {
             Sheet sheet = wb.getSheetAt(0);
             DataFormatter fmt = new DataFormatter();
 
-            int headerRowIdx   = findHeaderRow(sheet, fmt);
-            int chipNameRowIdx = headerRowIdx + 1;
-            int dateRowIdx     = headerRowIdx + 2;
-            int dataStartIdx   = headerRowIdx + 3;
+            result.fileType = FileType.detect(filename, sheet, fmt);
 
-            buildChipColDefs(sheet, fmt, headerRowIdx, chipNameRowIdx, dateRowIdx, result);
-            parseDataRows(sheet, fmt, dataStartIdx, result);
+            if (result.fileType == FileType.RAW_DATA) {
+                parseRawData(sheet, fmt, result);
+            } else {
+                parseMatrix(sheet, fmt, result);
+            }
         }
         return result;
     }
 
+    // ── Matrix 파싱 (Server / Client / Mobile 공용) ─────────────────
+
+    private static void parseMatrix(Sheet sheet, DataFormatter fmt, ParseResult result) {
+        boolean isMobile = (result.fileType == FileType.MOBILE);
+
+        int headerRowIdx   = findHeaderRow(sheet, fmt, isMobile);
+        // Mobile: 칩셋명이 headerRow 자체에 있음 (merged F2:Q3)
+        int chipNameRowIdx = isMobile ? headerRowIdx : headerRowIdx + 1;
+        int dateRowIdx     = isMobile ? headerRowIdx + 2 : headerRowIdx + 2;
+        int dataStartIdx   = isMobile ? headerRowIdx + 3 : headerRowIdx + 3;
+        int specColCount   = isMobile ? 5 : 6;
+
+        buildChipColDefs(sheet, fmt, headerRowIdx, chipNameRowIdx, dateRowIdx,
+                         specColCount, result);
+        parseDataRows(sheet, fmt, dataStartIdx, specColCount, isMobile, result);
+    }
+
     // ── 헤더 행 탐색 ────────────────────────────────────────────────
 
-    private static int findHeaderRow(Sheet sheet, DataFormatter fmt) {
+    private static int findHeaderRow(Sheet sheet, DataFormatter fmt, boolean isMobile) {
         for (int r = 0; r <= Math.min(4, sheet.getLastRowNum()); r++) {
             Row row = sheet.getRow(r);
             if (row == null) continue;
             for (Cell cell : row) {
-                String val = fmt.formatCellValue(cell).trim();
-                if ("DIMM".equalsIgnoreCase(val) || val.toUpperCase().contains("PRODUCT")) {
-                    return r;
+                String val = fmt.formatCellValue(cell).trim().toUpperCase();
+                if (isMobile) {
+                    if ("PKG".equals(val)) return r;
+                } else {
+                    if ("DIMM".equals(val) || val.contains("PRODUCT")) return r;
                 }
             }
         }
@@ -80,19 +148,20 @@ public class ChipsetExcelParser {
 
     private static void buildChipColDefs(Sheet sheet, DataFormatter fmt,
                                          int headerRowIdx, int chipNameRowIdx,
-                                         int dateRowIdx, ParseResult result) {
+                                         int dateRowIdx, int specColCount,
+                                         ParseResult result) {
         Row groupRow    = sheet.getRow(headerRowIdx);
         Row chipNameRow = sheet.getRow(chipNameRowIdx);
         Row dateRow     = sheet.getRow(dateRowIdx);
         if (groupRow == null || chipNameRow == null) return;
 
-        // 1순위: 병합 셀에서 벤더 감지
         Map<Integer, String>  vendorByStart = new LinkedHashMap<>();
         Map<Integer, Integer> vendorEndCol  = new HashMap<>();
 
+        // 1순위: 병합 셀에서 벤더 감지
         for (CellRangeAddress merged : sheet.getMergedRegions()) {
             if (merged.getFirstRow() != headerRowIdx) continue;
-            if (merged.getFirstColumn() < SPEC_COL_COUNT) continue;
+            if (merged.getFirstColumn() < specColCount) continue;
             Cell cell = groupRow.getCell(merged.getFirstColumn());
             if (cell == null) continue;
             String val = fmt.formatCellValue(cell).trim();
@@ -104,7 +173,7 @@ public class ChipsetExcelParser {
         // 2순위: 병합 없으면 헤더 행 스캔
         if (vendorByStart.isEmpty()) {
             int lastCellNum = chipNameRow.getLastCellNum();
-            for (int c = SPEC_COL_COUNT; c < lastCellNum; c++) {
+            for (int c = specColCount; c < lastCellNum; c++) {
                 Cell cell = groupRow.getCell(c);
                 if (cell == null) continue;
                 String val = fmt.formatCellValue(cell).trim();
@@ -122,7 +191,6 @@ public class ChipsetExcelParser {
             }
         }
 
-        // 칩 컬럼 객체 생성
         int sortOrder = 0;
         List<Integer> startCols = new ArrayList<>(vendorByStart.keySet());
         Collections.sort(startCols);
@@ -152,25 +220,35 @@ public class ChipsetExcelParser {
     // ── 데이터 행 파싱 ────────────────────────────────────────────
 
     private static void parseDataRows(Sheet sheet, DataFormatter fmt,
-                                      int dataStartIdx, ParseResult result) {
+                                      int dataStartIdx, int specColCount,
+                                      boolean isMobile, ParseResult result) {
         Set<Integer> chipColIdxSet = new HashSet<>();
-        for (ChipColDef def : result.chipColDefs) {
-            chipColIdxSet.add(def.colIdx);
-        }
+        for (ChipColDef def : result.chipColDefs) chipColIdxSet.add(def.colIdx);
 
         int sortOrder = 0;
         for (int r = dataStartIdx; r <= sheet.getLastRowNum(); r++) {
             Row row = sheet.getRow(r);
             if (row == null) continue;
-            if (isRowEmpty(row, fmt)) continue;
+            if (isRowEmpty(row, fmt, specColCount)) continue;
 
             RowData rd = new RowData();
-            rd.dimm      = getCellStr(row, 0, fmt);
-            rd.product   = getCellStr(row, 1, fmt);
-            rd.ver       = getCellStr(row, 2, fmt);
-            rd.density   = getCellStr(row, 3, fmt);
-            rd.org       = getCellStr(row, 4, fmt);
-            rd.speed     = getCellStr(row, 5, fmt);
+            if (isMobile) {
+                // Mobile: col0=PKG, col1=Density, col2=Product, col3=P/N, col4=CodeName
+                rd.dimm    = getCellStr(row, 0, fmt);  // PKG
+                rd.density = getCellStr(row, 1, fmt);
+                rd.product = getCellStr(row, 2, fmt);
+                rd.org     = getCellStr(row, 3, fmt);  // P/N
+                rd.ver     = getCellStr(row, 4, fmt);  // Code Name (VP/VL/VH)
+                rd.speed   = "";
+            } else {
+                // Server/Client: col0=DIMM, col1=Product, col2=Ver, col3=Density, col4=Org, col5=Speed
+                rd.dimm    = getCellStr(row, 0, fmt);
+                rd.product = getCellStr(row, 1, fmt);
+                rd.ver     = getCellStr(row, 2, fmt);
+                rd.density = getCellStr(row, 3, fmt);
+                rd.org     = getCellStr(row, 4, fmt);
+                rd.speed   = getCellStr(row, 5, fmt);
+            }
             rd.sortOrder = sortOrder++;
 
             for (int chipColIdx : chipColIdxSet) {
@@ -184,10 +262,51 @@ public class ChipsetExcelParser {
         }
     }
 
+    // ── Raw_Data 파싱 ──────────────────────────────────────────────
+
+    private static void parseRawData(Sheet sheet, DataFormatter fmt, ParseResult result) {
+        // Row 0: 섹션 헤더 (Target AP, Sorting KEY, Validation Status)
+        // Row 1: 컬럼 헤더 (Company, Seg, Chipset, ...)
+        // Row 2+: 데이터
+        int dataStartIdx = 2;
+        int sortOrder = 0;
+
+        for (int r = dataStartIdx; r <= sheet.getLastRowNum(); r++) {
+            Row row = sheet.getRow(r);
+            if (row == null) continue;
+            // 주요 컬럼이 모두 비어 있으면 스킵
+            if (getCellStr(row, 1, fmt).isEmpty() && getCellStr(row, 3, fmt).isEmpty()) continue;
+
+            RawDataRowData rd = new RawDataRowData();
+            rd.company      = getCellStr(row,  1, fmt);
+            rd.seg          = getCellStr(row,  2, fmt);
+            rd.chipset      = getCellStr(row,  3, fmt);
+            rd.socCs        = getCellStr(row,  4, fmt);
+            rd.partNumber   = getCellStr(row,  5, fmt);
+            rd.dramProcess  = getCellStr(row,  6, fmt);
+            rd.flashProcess = getCellStr(row,  7, fmt);
+            rd.density      = getCellStr(row,  8, fmt);
+            rd.mlcTlc       = getCellStr(row,  9, fmt);
+            rd.pkg          = getCellStr(row, 10, fmt);
+            rd.val1Date     = getCellStr(row, 11, fmt);
+            rd.val1Eng      = getCellStr(row, 12, fmt);
+            rd.val1Status   = getCellStr(row, 13, fmt);
+            rd.val1Remark   = getCellStr(row, 14, fmt);
+            rd.val2Date     = getCellStr(row, 15, fmt);
+            rd.val2Eng      = getCellStr(row, 16, fmt);
+            rd.val2Status   = getCellStr(row, 17, fmt);
+            rd.val2Remark   = getCellStr(row, 18, fmt);
+            rd.val3Date     = getCellStr(row, 19, fmt);
+            rd.val3Eng      = getCellStr(row, 20, fmt);
+            rd.sortOrder    = sortOrder++;
+            result.rawDataRows.add(rd);
+        }
+    }
+
     // ── 유틸 ─────────────────────────────────────────────────────
 
-    private static boolean isRowEmpty(Row row, DataFormatter fmt) {
-        for (int c = 0; c < SPEC_COL_COUNT; c++) {
+    private static boolean isRowEmpty(Row row, DataFormatter fmt, int specColCount) {
+        for (int c = 0; c < specColCount; c++) {
             Cell cell = row.getCell(c);
             if (cell != null && !fmt.formatCellValue(cell).trim().isEmpty()) return false;
         }
@@ -207,7 +326,6 @@ public class ChipsetExcelParser {
         if (color == null) return null;
         byte[] rgb = color.getRGB();
         if (rgb == null || rgb.length < 3) return null;
-        // & 0xFF: byte → unsigned int 변환 (음수 방지)
         String hex = String.format("#%02X%02X%02X",
                 rgb[0] & 0xFF, rgb[1] & 0xFF, rgb[2] & 0xFF);
         if ("#FFFFFF".equals(hex) || "#000000".equals(hex)) return null;

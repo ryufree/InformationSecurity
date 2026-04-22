@@ -1,0 +1,352 @@
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="UTF-8">
+<meta name="ProgId" content="Word.Document">
+<meta name="Generator" content="Microsoft Word 15">
+<title>Chipset DB 설계 문서</title>
+<style>
+  @page { size:297mm 210mm; margin:20mm 18mm 20mm 18mm; }
+  body { font-family:'맑은 고딕','Malgun Gothic',sans-serif; font-size:10pt; color:#111827; }
+  h1 { font-size:20pt; color:#1E3A5F; border-bottom:3px solid #1E3A5F; padding-bottom:6pt; margin-top:0; }
+  h2 { font-size:14pt; color:#1D4ED8; border-left:5px solid #3B82F6; padding-left:8pt; margin-top:18pt; }
+  h3 { font-size:11pt; color:#374151; margin-top:12pt; }
+  p  { line-height:1.6; margin:4pt 0; }
+
+  /* 공통 테이블 */
+  table { border-collapse:collapse; width:100%; margin:8pt 0 14pt 0; font-size:9.5pt; }
+  th { background:#1E3A5F; color:#FFFFFF; padding:5pt 8pt; text-align:left; font-weight:bold; border:1px solid #1E3A5F; }
+  td { padding:4pt 8pt; border:1px solid #D1D5DB; vertical-align:top; }
+  tr:nth-child(even) td { background:#F8FAFC; }
+
+  /* 컬럼 타입 뱃지 */
+  .pk  { background:#FEF9C3; color:#92400E; font-weight:bold; padding:1pt 4pt; border-radius:2pt; font-size:9pt; }
+  .fk  { background:#DBEAFE; color:#1E40AF; font-style:italic; padding:1pt 4pt; border-radius:2pt; font-size:9pt; }
+  .key { background:#FCE7F3; color:#9D174D; font-weight:bold; padding:1pt 4pt; border-radius:2pt; font-size:9pt; }
+
+  /* 테이블별 헤더 색상 */
+  .tbl-upload th  { background:#1D4ED8; }
+  .tbl-chipcol th { background:#7C3AED; }
+  .tbl-row th     { background:#15803D; }
+  .tbl-cell th    { background:#B45309; }
+  .tbl-raw th     { background:#BE123C; }
+  .tbl-hist th    { background:#374151; }
+
+  /* 관계 박스 */
+  .rel-box { background:#EFF6FF; border:1px solid #93C5FD; padding:8pt 12pt; margin:8pt 0; border-radius:4pt; }
+  .rel-box table { margin:4pt 0; }
+  .rel-box th { background:#3B82F6; font-size:9pt; }
+
+  /* 흐름 박스 */
+  .flow { background:#F0FDF4; border:1px solid #86EFAC; padding:8pt 12pt; margin:8pt 0; border-radius:4pt; font-family:Consolas,monospace; font-size:9pt; white-space:pre; }
+  .note { background:#FFFBEB; border-left:4px solid #F59E0B; padding:6pt 10pt; margin:6pt 0; font-size:9.5pt; }
+  .warn { background:#FFF1F2; border-left:4px solid #F43F5E; padding:6pt 10pt; margin:6pt 0; font-size:9.5pt; }
+
+  /* 섹션 구분선 */
+  hr { border:none; border-top:1px solid #E5E7EB; margin:14pt 0; }
+
+  /* 표지 */
+  .cover { text-align:center; padding:40pt 0 30pt 0; }
+  .cover h1 { border:none; font-size:26pt; }
+  .cover .meta { color:#6B7280; font-size:10pt; margin-top:8pt; }
+  .badge { display:inline-block; background:#1D4ED8; color:white; padding:2pt 8pt; border-radius:3pt; font-size:9pt; margin:2pt; }
+</style>
+</head>
+<body>
+
+<!-- ══ 표지 ══ -->
+<div class="cover">
+  <h1>Chipset DB 설계 문서</h1>
+  <p class="meta">버전 1.0 &nbsp;|&nbsp; 작성일: 2026-04-22 &nbsp;|&nbsp; 시스템: chipset-app</p>
+  <p style="margin-top:12pt;">
+    <span class="badge">Spring Boot</span>
+    <span class="badge">MyBatis</span>
+    <span class="badge">Oracle / H2</span>
+    <span class="badge">Vue 3</span>
+  </p>
+  <p style="margin-top:16pt;color:#374151;">
+    Server.xlsx · Client.xlsx · Mobile.xlsx · Raw_Data.xlsx<br>
+    4가지 Excel 파일의 DB 저장 구조, 테이블 관계, 매핑 규칙을 정의합니다.
+  </p>
+</div>
+
+<hr>
+
+<!-- ══ 1. 개요 ══ -->
+<h2>1. 개요</h2>
+<p>이 시스템은 Chipset Validation Excel 파일 4종을 업로드받아 Oracle DB에 저장하고, 웹 화면에서 조회 및 히스토리 비교를 제공합니다.</p>
+
+<table>
+  <tr><th>파일명</th><th>타입 코드</th><th>구조 패턴</th><th>설명</th></tr>
+  <tr><td>Server.xlsx</td><td><span class="badge" style="background:#1D4ED8">SERVER</span></td><td>Matrix형</td><td>서버 칩셋 검증 매트릭스 (DIMM·Org·Speed 기준)</td></tr>
+  <tr><td>Client.xlsx</td><td><span class="badge" style="background:#7C3AED">CLIENT</span></td><td>Matrix형</td><td>클라이언트 칩셋 검증 매트릭스 (Server와 동일 구조)</td></tr>
+  <tr><td>Mobile.xlsx</td><td><span class="badge" style="background:#15803D">MOBILE</span></td><td>Matrix형</td><td>모바일 칩셋 검증 매트릭스 (PKG·P/N·Code Name 기준)</td></tr>
+  <tr><td>Raw_Data.xlsx</td><td><span class="badge" style="background:#BE123C">RAW_DATA</span></td><td>Tracking형</td><td>검증 이력 추적 시트 (Target AP · Sorting KEY · Val 섹션)</td></tr>
+</table>
+
+<div class="note">
+  <b>핵심 설계 원칙:</b> 4가지 타입은 <code>CHIPSET_UPLOAD.FILE_TYPE</code> 컬럼으로 독립 구분됩니다.
+  Server 업로드가 Client/Mobile/RAW_DATA 데이터에 영향을 주지 않습니다.
+</div>
+
+<hr>
+
+<!-- ══ 2. 테이블 전체 목록 ══ -->
+<h2>2. 테이블 전체 목록</h2>
+
+<h3>2-1. 메인 테이블 (최신 데이터 1건 유지)</h3>
+<table>
+  <tr><th>테이블명</th><th>역할</th><th>대상 타입</th><th>레코드 수</th></tr>
+  <tr><td><b>CHIPSET_UPLOAD</b></td><td>업로드 메타 (파일명·타입·일시·건수)</td><td>전체</td><td>타입별 최대 1행</td></tr>
+  <tr><td><b>CHIPSET_CHIP_COL</b></td><td>칩셋 컬럼 정의 (벤더·칩명·출시일)</td><td>SERVER / CLIENT / MOBILE</td><td>업로드당 칩셋 수</td></tr>
+  <tr><td><b>CHIPSET_ROW</b></td><td>스펙 행 (DIMM·Product 등)</td><td>SERVER / CLIENT / MOBILE</td><td>업로드당 행 수</td></tr>
+  <tr><td><b>CHIPSET_CELL</b></td><td>셀 값 (검증일자·배경색)</td><td>SERVER / CLIENT / MOBILE</td><td>행 수 × 칩셋 수</td></tr>
+  <tr><td><b>RAWDATA_ROW</b></td><td>Raw Data 행 전체 컬럼</td><td>RAW_DATA</td><td>업로드당 행 수</td></tr>
+</table>
+
+<h3>2-2. 히스토리 테이블 (누적 보관)</h3>
+<table class="tbl-hist">
+  <tr><th>테이블명</th><th>역할</th><th>메인 대비 추가 컬럼</th></tr>
+  <tr><td>CHIPSET_UPLOAD_H</td><td>업로드 이력 누적</td><td>UPLOAD_H_SEQ (새 PK)</td></tr>
+  <tr><td>CHIPSET_CHIP_COL_H</td><td>칩셋 컬럼 이력 누적</td><td>COL_H_SEQ (새 PK)</td></tr>
+  <tr><td>CHIPSET_ROW_H</td><td>스펙 행 이력 누적</td><td>ROW_H_SEQ (새 PK)</td></tr>
+  <tr><td>CHIPSET_CELL_H</td><td>셀 값 이력 누적</td><td>CELL_H_SEQ (새 PK), UPLOAD_SEQ</td></tr>
+  <tr><td>RAWDATA_ROW_H</td><td>Raw Data 행 이력 누적</td><td>RAWDATA_ROW_H_SEQ (새 PK)</td></tr>
+</table>
+
+<hr>
+
+<!-- ══ 3. 테이블 관계 ══ -->
+<h2>3. 테이블 관계 (ER 요약)</h2>
+<p>상세 ER 다이어그램은 <b>db-design.drawio</b> 파일을 draw.io에서 열어 확인하세요.</p>
+
+<div class="rel-box">
+<table>
+  <tr><th>부모 테이블</th><th>관계</th><th>자식 테이블</th><th>조인 컬럼</th><th>설명</th></tr>
+  <tr><td>CHIPSET_UPLOAD</td><td style="text-align:center;font-weight:bold;">1 : N</td><td>CHIPSET_CHIP_COL</td><td>UPLOAD_SEQ</td><td>업로드 1건에 칩셋 컬럼 N개</td></tr>
+  <tr><td>CHIPSET_UPLOAD</td><td style="text-align:center;font-weight:bold;">1 : N</td><td>CHIPSET_ROW</td><td>UPLOAD_SEQ</td><td>업로드 1건에 스펙 행 N개</td></tr>
+  <tr><td>CHIPSET_ROW</td><td style="text-align:center;font-weight:bold;">1 : N</td><td>CHIPSET_CELL</td><td>ROW_SEQ</td><td>스펙 행 1개에 셀 N개 (칩셋 수만큼)</td></tr>
+  <tr><td>CHIPSET_CHIP_COL</td><td style="text-align:center;font-weight:bold;">1 : N</td><td>CHIPSET_CELL</td><td>COL_SEQ</td><td>칩셋 컬럼 1개에 셀 N개 (행 수만큼)</td></tr>
+  <tr><td>CHIPSET_UPLOAD</td><td style="text-align:center;font-weight:bold;">1 : N</td><td>RAWDATA_ROW</td><td>UPLOAD_SEQ</td><td>업로드 1건에 Raw Data 행 N개</td></tr>
+</table>
+</div>
+
+<div class="note">
+  <b>CHIPSET_CELL은 교차 테이블:</b> ROW_SEQ(행) + COL_SEQ(열)의 조합이 각 셀 하나를 의미합니다.
+  즉 행 수 × 칩셋 컬럼 수 = CHIPSET_CELL 레코드 수입니다.
+</div>
+
+<hr>
+
+<!-- ══ 4. 테이블 스키마 ══ -->
+<h2>4. 테이블 상세 스키마</h2>
+
+<!-- CHIPSET_UPLOAD -->
+<h3>4-1. CHIPSET_UPLOAD</h3>
+<table class="tbl-upload">
+  <tr><th>컬럼명</th><th>타입</th><th>NULL</th><th>설명</th></tr>
+  <tr><td><span class="pk">PK</span> UPLOAD_SEQ</td><td>NUMBER</td><td>NOT NULL</td><td>시퀀스 자동 채번 (SQ_CHIPSET_UPLOAD)</td></tr>
+  <tr><td>FILE_NM</td><td>VARCHAR2(255)</td><td>NOT NULL</td><td>원본 파일명 (예: Server.xlsx)</td></tr>
+  <tr><td><span class="key">★</span> FILE_TYPE</td><td>VARCHAR2(20)</td><td>NOT NULL</td><td><b>핵심 구분 컬럼.</b> 'SERVER' | 'CLIENT' | 'MOBILE' | 'RAW_DATA'</td></tr>
+  <tr><td>UPLOAD_DT</td><td>TIMESTAMP</td><td>NOT NULL</td><td>업로드 일시 (CURRENT_TIMESTAMP 자동 입력)</td></tr>
+  <tr><td>ROW_COUNT</td><td>NUMBER</td><td>DEFAULT 0</td><td>파싱된 데이터 행 수</td></tr>
+  <tr><td>COL_COUNT</td><td>NUMBER</td><td>DEFAULT 0</td><td>칩셋 컬럼 수 (RAW_DATA는 0)</td></tr>
+</table>
+
+<!-- CHIPSET_CHIP_COL -->
+<h3>4-2. CHIPSET_CHIP_COL</h3>
+<table class="tbl-chipcol">
+  <tr><th>컬럼명</th><th>타입</th><th>NULL</th><th>설명</th></tr>
+  <tr><td><span class="pk">PK</span> COL_SEQ</td><td>NUMBER</td><td>NOT NULL</td><td>시퀀스 자동 채번 (SQ_CHIPSET_CHIP_COL)</td></tr>
+  <tr><td><span class="fk">FK</span> UPLOAD_SEQ</td><td>NUMBER</td><td>NOT NULL</td><td>CHIPSET_UPLOAD 참조</td></tr>
+  <tr><td>VENDOR</td><td>VARCHAR2(100)</td><td>NOT NULL</td><td>벤더명. Excel 병합셀에서 추출 (예: INTEL, AMD, Qualcomm)</td></tr>
+  <tr><td>COL_IDX</td><td>NUMBER</td><td>NOT NULL</td><td>Excel 원본 컬럼 인덱스 (0-based). CHIPSET_CELL 매핑 시 사용</td></tr>
+  <tr><td>CHIP_NM</td><td>VARCHAR2(200)</td><td>NOT NULL</td><td>칩셋 이름 (예: SPR, EMR, GNR, SM8650)</td></tr>
+  <tr><td>CHIP_DT</td><td>VARCHAR2(50)</td><td>NULL</td><td>출시일 (예: 2023.Q4)</td></tr>
+  <tr><td>SORT_ORDER</td><td>NUMBER</td><td>DEFAULT 0</td><td>화면 표시 순서</td></tr>
+</table>
+
+<!-- CHIPSET_ROW -->
+<h3>4-3. CHIPSET_ROW</h3>
+<table class="tbl-row">
+  <tr><th>컬럼명</th><th>타입</th><th>Server/Client 의미</th><th>Mobile 의미</th></tr>
+  <tr><td><span class="pk">PK</span> ROW_SEQ</td><td>NUMBER</td><td colspan="2">시퀀스 자동 채번 (SQ_CHIPSET_ROW)</td></tr>
+  <tr><td><span class="fk">FK</span> UPLOAD_SEQ</td><td>NUMBER</td><td colspan="2">CHIPSET_UPLOAD 참조</td></tr>
+  <tr><td>DIMM</td><td>VARCHAR2(100)</td><td>DIMM 타입 (DDR5 등)</td><td><b>PKG</b> (LP5X 등)</td></tr>
+  <tr><td>PRODUCT</td><td>VARCHAR2(200)</td><td>제품명</td><td>제품명 (동일)</td></tr>
+  <tr><td>VER</td><td>VARCHAR2(50)</td><td>버전</td><td><b>Code Name</b> (VP/VL/VH)</td></tr>
+  <tr><td>DENSITY</td><td>VARCHAR2(50)</td><td>용량</td><td>용량 (동일)</td></tr>
+  <tr><td>ORG</td><td>VARCHAR2(50)</td><td>Organization</td><td><b>P/N</b> (Part Number)</td></tr>
+  <tr><td>SPEED</td><td>VARCHAR2(100)</td><td>속도</td><td><b>없음</b> (빈 문자열)</td></tr>
+  <tr><td>SORT_ORDER</td><td>NUMBER</td><td colspan="2">화면 표시 순서</td></tr>
+</table>
+<div class="note">
+  <b>Mobile 컬럼 재사용 전략:</b> Mobile.xlsx의 좌측 스펙 컬럼 구조가 다르지만, 별도 컬럼 추가 없이 기존 컬럼(DIMM→PKG, ORG→P/N, VER→CodeName)을 재사용합니다. 화면에서 탭 조건에 따라 레이블을 다르게 표시합니다.
+</div>
+
+<!-- CHIPSET_CELL -->
+<h3>4-4. CHIPSET_CELL</h3>
+<table class="tbl-cell">
+  <tr><th>컬럼명</th><th>타입</th><th>NULL</th><th>설명</th></tr>
+  <tr><td><span class="pk">PK</span> CELL_SEQ</td><td>NUMBER</td><td>NOT NULL</td><td>시퀀스 자동 채번 (SQ_CHIPSET_CELL)</td></tr>
+  <tr><td><span class="fk">FK</span> ROW_SEQ</td><td>NUMBER</td><td>NOT NULL</td><td>CHIPSET_ROW 참조 (행 위치)</td></tr>
+  <tr><td><span class="fk">FK</span> COL_SEQ</td><td>NUMBER</td><td>NOT NULL</td><td>CHIPSET_CHIP_COL 참조 (열 위치)</td></tr>
+  <tr><td>CELL_VALUE</td><td>VARCHAR2(200)</td><td>NULL</td><td>셀 텍스트 (검증일자, VP/VL/VH 등). 빈 셀은 공백 문자열</td></tr>
+  <tr><td>BG_COLOR</td><td>VARCHAR2(10)</td><td>NULL</td><td>배경색 HEX (예: #00B050). 흰색·검정은 NULL로 저장</td></tr>
+</table>
+
+<!-- RAWDATA_ROW -->
+<h3>4-5. RAWDATA_ROW</h3>
+<table class="tbl-raw">
+  <tr><th>컬럼명</th><th>타입</th><th>Excel 섹션</th><th>설명</th></tr>
+  <tr><td><span class="pk">PK</span> RAWDATA_ROW_SEQ</td><td>NUMBER</td><td>-</td><td>시퀀스 자동 채번</td></tr>
+  <tr><td><span class="fk">FK</span> UPLOAD_SEQ</td><td>NUMBER</td><td>-</td><td>CHIPSET_UPLOAD 참조</td></tr>
+  <tr><td>COMPANY</td><td>VARCHAR2(100)</td><td>Target AP</td><td>회사명</td></tr>
+  <tr><td>SEG</td><td>VARCHAR2(100)</td><td>Target AP</td><td>세그먼트</td></tr>
+  <tr><td>CHIPSET</td><td>VARCHAR2(200)</td><td>Target AP</td><td>칩셋명</td></tr>
+  <tr><td>SOC_CS</td><td>VARCHAR2(200)</td><td>Sorting KEY</td><td>SoC CS</td></tr>
+  <tr><td>PART_NUMBER</td><td>VARCHAR2(200)</td><td>Sorting KEY</td><td>Part Number</td></tr>
+  <tr><td>DRAM_PROCESS</td><td>VARCHAR2(100)</td><td>Sorting KEY</td><td>DRAM 공정</td></tr>
+  <tr><td>FLASH_PROCESS</td><td>VARCHAR2(100)</td><td>Sorting KEY</td><td>Flash 공정</td></tr>
+  <tr><td>DENSITY</td><td>VARCHAR2(50)</td><td>Sorting KEY</td><td>용량</td></tr>
+  <tr><td>MLC_TLC</td><td>VARCHAR2(50)</td><td>Sorting KEY</td><td>MLC/TLC 구분</td></tr>
+  <tr><td>PKG</td><td>VARCHAR2(200)</td><td>Sorting KEY</td><td>패키지</td></tr>
+  <tr><td>VAL1_DATE</td><td>VARCHAR2(20)</td><td rowspan="4">Validation Status<br>(1차)</td><td>1차 검증 날짜</td></tr>
+  <tr><td>VAL1_ENG</td><td>VARCHAR2(50)</td><td>1차 담당 엔지니어</td></tr>
+  <tr><td>VAL1_STATUS</td><td>VARCHAR2(50)</td><td>1차 결과 (Pass / Fail / In Progress)</td></tr>
+  <tr><td>VAL1_REMARK</td><td>VARCHAR2(500)</td><td>1차 비고</td></tr>
+  <tr><td>VAL2_DATE ~ VAL2_REMARK</td><td>VARCHAR2</td><td>Validation Status (2차)</td><td>2차 검증 이력 (동일 구조)</td></tr>
+  <tr><td>VAL3_DATE / VAL3_ENG</td><td>VARCHAR2</td><td>Validation Status (3차)</td><td>3차 날짜·담당자 (Status/Remark 없음)</td></tr>
+  <tr><td>SORT_ORDER</td><td>NUMBER</td><td>-</td><td>화면 표시 순서</td></tr>
+</table>
+
+<hr>
+
+<!-- ══ 5. Excel → DB 매핑 ══ -->
+<h2>5. Excel → DB 컬럼 매핑</h2>
+
+<h3>5-1. Server.xlsx / Client.xlsx 매핑</h3>
+<table>
+  <tr><th>Excel 위치</th><th>내용 예시</th><th>저장 테이블</th><th>저장 컬럼</th></tr>
+  <tr><td>행0, 열6+ 병합셀</td><td>Intel, AMD</td><td>CHIPSET_CHIP_COL</td><td>VENDOR</td></tr>
+  <tr><td>행1, 열6+ 각 셀</td><td>SPR, EMR, GNR</td><td>CHIPSET_CHIP_COL</td><td>CHIP_NM</td></tr>
+  <tr><td>행2, 열6+ 각 셀</td><td>2022.Q4, 2023.Q4</td><td>CHIPSET_CHIP_COL</td><td>CHIP_DT</td></tr>
+  <tr><td>행3+, 열0</td><td>DDR5</td><td>CHIPSET_ROW</td><td>DIMM</td></tr>
+  <tr><td>행3+, 열1</td><td>Samsung A</td><td>CHIPSET_ROW</td><td>PRODUCT</td></tr>
+  <tr><td>행3+, 열2</td><td>v1.0</td><td>CHIPSET_ROW</td><td>VER</td></tr>
+  <tr><td>행3+, 열3</td><td>16GB</td><td>CHIPSET_ROW</td><td>DENSITY</td></tr>
+  <tr><td>행3+, 열4</td><td>x4</td><td>CHIPSET_ROW</td><td>ORG</td></tr>
+  <tr><td>행3+, 열5</td><td>4800</td><td>CHIPSET_ROW</td><td>SPEED</td></tr>
+  <tr><td>행3+, 열6+ 셀 텍스트</td><td>2024.03.15</td><td>CHIPSET_CELL</td><td>CELL_VALUE</td></tr>
+  <tr><td>행3+, 열6+ 셀 배경색</td><td>#00B050 (녹색)</td><td>CHIPSET_CELL</td><td>BG_COLOR</td></tr>
+</table>
+
+<h3>5-2. Mobile.xlsx 매핑 (Server/Client와 다른 컬럼만 표기)</h3>
+<table class="tbl-row">
+  <tr><th>Excel 열</th><th>헤더 텍스트</th><th>저장 테이블</th><th>저장 컬럼</th><th>비고</th></tr>
+  <tr><td>열0</td><td>PKG</td><td>CHIPSET_ROW</td><td>DIMM</td><td>컬럼 재사용</td></tr>
+  <tr><td>열1</td><td>Density</td><td>CHIPSET_ROW</td><td>DENSITY</td><td>동일</td></tr>
+  <tr><td>열2</td><td>Product</td><td>CHIPSET_ROW</td><td>PRODUCT</td><td>동일</td></tr>
+  <tr><td>열3</td><td>P/N</td><td>CHIPSET_ROW</td><td>ORG</td><td>컬럼 재사용</td></tr>
+  <tr><td>열4</td><td>Code Name</td><td>CHIPSET_ROW</td><td>VER</td><td>컬럼 재사용</td></tr>
+  <tr><td>-</td><td>(없음)</td><td>CHIPSET_ROW</td><td>SPEED</td><td>빈 문자열 저장</td></tr>
+</table>
+
+<h3>5-3. Raw_Data.xlsx 매핑</h3>
+<table class="tbl-raw">
+  <tr><th>Excel 열 인덱스</th><th>헤더명</th><th>저장 컬럼</th></tr>
+  <tr><td>1</td><td>Company</td><td>COMPANY</td></tr>
+  <tr><td>2</td><td>Seg</td><td>SEG</td></tr>
+  <tr><td>3</td><td>Chipset</td><td>CHIPSET</td></tr>
+  <tr><td>4</td><td>SoC CS</td><td>SOC_CS</td></tr>
+  <tr><td>5</td><td>Part Number</td><td>PART_NUMBER</td></tr>
+  <tr><td>6</td><td>DRAM Process</td><td>DRAM_PROCESS</td></tr>
+  <tr><td>7</td><td>Flash Process</td><td>FLASH_PROCESS</td></tr>
+  <tr><td>8</td><td>Density</td><td>DENSITY</td></tr>
+  <tr><td>9</td><td>MLC/TLC</td><td>MLC_TLC</td></tr>
+  <tr><td>10</td><td>PKG</td><td>PKG</td></tr>
+  <tr><td>11~14</td><td>Date / Eng / Status / Remark (1차)</td><td>VAL1_DATE ~ VAL1_REMARK</td></tr>
+  <tr><td>15~18</td><td>Date / Eng / Status / Remark (2차)</td><td>VAL2_DATE ~ VAL2_REMARK</td></tr>
+  <tr><td>19~20</td><td>Date / Eng (3차)</td><td>VAL3_DATE ~ VAL3_ENG</td></tr>
+</table>
+
+<hr>
+
+<!-- ══ 6. 업로드 처리 흐름 ══ -->
+<h2>6. 업로드 처리 흐름</h2>
+
+<h3>6-1. 파일 타입 자동 감지 (ChipsetExcelParser)</h3>
+<div class="flow">  1단계: 상위 4행 스캔 → "TARGET AP" 또는 "SORTING KEY" 발견
+         → RAW_DATA 반환  (최우선)
+
+  2단계: 상위 4행 첫 2열 스캔 → "PKG" 발견
+         → MOBILE 반환
+
+  3단계: 파일명 패턴 확인
+         - 파일명에 "CLIENT" 포함 → CLIENT
+         - 파일명에 "MOBILE" 포함 → MOBILE
+         - 파일명에 "RAW"    포함 → RAW_DATA
+
+  4단계: 위 조건 미해당 → SERVER (기본값)</div>
+
+<h3>6-2. Matrix형 업로드 처리 순서 (SERVER / CLIENT / MOBILE)</h3>
+<table>
+  <tr><th>단계</th><th>작업</th><th>대상 테이블</th></tr>
+  <tr><td>①</td><td>해당 FILE_TYPE의 기존 데이터 전체 삭제</td><td>CHIPSET_CELL → CHIPSET_ROW → CHIPSET_CHIP_COL → CHIPSET_UPLOAD</td></tr>
+  <tr><td>②</td><td>CHIPSET_UPLOAD INSERT + uploadSeq 채번</td><td>CHIPSET_UPLOAD</td></tr>
+  <tr><td>③</td><td>칩셋 컬럼 INSERT (colIdx→colSeq 매핑 보존)</td><td>CHIPSET_CHIP_COL</td></tr>
+  <tr><td>④</td><td>스펙 행 INSERT + rowSeq 채번</td><td>CHIPSET_ROW</td></tr>
+  <tr><td>⑤</td><td>셀 값 INSERT (CELL_VALUE + BG_COLOR)</td><td>CHIPSET_CELL</td></tr>
+  <tr><td>⑥</td><td>히스토리 누적 INSERT (삭제 없이)</td><td>*_H 테이블 5개</td></tr>
+</table>
+
+<h3>6-3. Tracking형 업로드 처리 순서 (RAW_DATA)</h3>
+<table>
+  <tr><th>단계</th><th>작업</th><th>대상 테이블</th></tr>
+  <tr><td>①</td><td>해당 FILE_TYPE의 기존 데이터 삭제</td><td>RAWDATA_ROW → CHIPSET_UPLOAD</td></tr>
+  <tr><td>②</td><td>CHIPSET_UPLOAD INSERT (COL_COUNT=0)</td><td>CHIPSET_UPLOAD</td></tr>
+  <tr><td>③</td><td>Raw Data 행 INSERT (23개 컬럼 전체)</td><td>RAWDATA_ROW</td></tr>
+  <tr><td>④</td><td>히스토리 누적 INSERT</td><td>CHIPSET_UPLOAD_H, RAWDATA_ROW_H</td></tr>
+</table>
+
+<div class="warn">
+  <b>삭제 순서 주의:</b> FK 제약으로 인해 반드시 자식 테이블부터 삭제해야 합니다.
+  CHIPSET_CELL → CHIPSET_ROW → CHIPSET_CHIP_COL → CHIPSET_UPLOAD 순서
+</div>
+
+<hr>
+
+<!-- ══ 7. 히스토리 관리 ══ -->
+<h2>7. 히스토리 관리 전략</h2>
+
+<table>
+  <tr><th>구분</th><th>메인 테이블</th><th>히스토리 테이블 (*_H)</th></tr>
+  <tr><td><b>저장 방식</b></td><td>파일 타입별 최신 1건 유지<br>(업로드 시 기존 DELETE 후 INSERT)</td><td>업로드마다 누적 INSERT<br>(DELETE 없음)</td></tr>
+  <tr><td><b>보존 기간</b></td><td>현재 최신 버전만</td><td>전체 히스토리</td></tr>
+  <tr><td><b>독립성</b></td><td>4가지 타입 완전 독립<br>(Server 업로드 ≠ Client 영향)</td><td>동일</td></tr>
+  <tr><td><b>조회 API</b></td><td>GET /api/chipset/matrix?type=SERVER</td><td>GET /api/chipset/history?type=SERVER<br>GET /api/chipset/history/{uploadSeq}</td></tr>
+</table>
+
+<hr>
+
+<!-- ══ 8. 시퀀스 목록 ══ -->
+<h2>8. 시퀀스 목록</h2>
+<table>
+  <tr><th>시퀀스명</th><th>채번 대상</th></tr>
+  <tr><td>SQ_CHIPSET_UPLOAD</td><td>CHIPSET_UPLOAD.UPLOAD_SEQ</td></tr>
+  <tr><td>SQ_CHIPSET_CHIP_COL</td><td>CHIPSET_CHIP_COL.COL_SEQ</td></tr>
+  <tr><td>SQ_CHIPSET_ROW</td><td>CHIPSET_ROW.ROW_SEQ</td></tr>
+  <tr><td>SQ_CHIPSET_CELL</td><td>CHIPSET_CELL.CELL_SEQ</td></tr>
+  <tr><td>SQ_CHIPSET_UPLOAD_H</td><td>CHIPSET_UPLOAD_H.UPLOAD_H_SEQ</td></tr>
+  <tr><td>SQ_CHIPSET_CHIP_COL_H</td><td>CHIPSET_CHIP_COL_H.COL_H_SEQ</td></tr>
+  <tr><td>SQ_CHIPSET_ROW_H</td><td>CHIPSET_ROW_H.ROW_H_SEQ</td></tr>
+  <tr><td>SQ_CHIPSET_CELL_H</td><td>CHIPSET_CELL_H.CELL_H_SEQ</td></tr>
+  <tr><td>SQ_RAWDATA_ROW</td><td>RAWDATA_ROW.RAWDATA_ROW_SEQ</td></tr>
+  <tr><td>SQ_RAWDATA_ROW_H</td><td>RAWDATA_ROW_H.RAWDATA_ROW_H_SEQ</td></tr>
+</table>
+
+<p style="margin-top:30pt;text-align:center;color:#9CA3AF;font-size:9pt;">
+  Chipset DB 설계 문서 v1.0 &nbsp;|&nbsp; 2026-04-22 &nbsp;|&nbsp; chipset-app
+</p>
+
+</body>
+</html>
