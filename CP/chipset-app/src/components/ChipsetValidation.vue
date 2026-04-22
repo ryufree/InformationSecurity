@@ -315,6 +315,10 @@
 import { ref, computed, reactive, watch, onUnmounted } from 'vue'
 import * as XLSX from 'xlsx'
 
+const props = defineProps({ topOffset: { type: Number, default: 0 } })
+const rootMinHeight = computed(() => `calc(100vh - ${props.topOffset}px)`)
+const layoutMaxHeight = computed(() => `calc(100vh - ${170 + props.topOffset}px)`)
+
 /* ── Icons ────────────────────────────────────────────────────── */
 const IconUpload   = { template: `<span style="margin-right:6px">↑</span>` }
 const IconDownload = { template: `<span style="margin-right:6px">↓</span>` }
@@ -730,7 +734,7 @@ function downloadExcel() {
   font-family: 'JetBrains Mono', 'Courier New', monospace;
   background: #0d0e14;
   color: #c8ccd6;
-  min-height: 100vh;
+  min-height: v-bind(rootMinHeight);
   display: flex;
   flex-direction: column;
 }
@@ -814,7 +818,7 @@ function downloadExcel() {
   flex-direction: column;
   overflow-y: auto;
   overflow-x: hidden;
-  max-height: calc(100vh - 170px);
+  max-height: v-bind(layoutMaxHeight);
 }
 .cv-layout::-webkit-scrollbar { width: 8px; }
 .cv-layout::-webkit-scrollbar-track { background: #111218; }

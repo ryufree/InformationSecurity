@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.chipset.mapper.ChipsetMapper">
+
+  <!-- ══ 메인: DELETE ════════════════════════════════════════════ -->
+
+  <delete id="deleteAllCells">
+    DELETE FROM CHIPSET_CELL
+  </delete>
+
+  <delete id="deleteAllRows">
+    DELETE FROM CHIPSET_ROW
+  </delete>
+
+  <delete id="deleteAllChipCols">
+    DELETE FROM CHIPSET_CHIP_COL
+  </delete>
+
+  <delete id="deleteAllUploads">
+    DELETE FROM CHIPSET_UPLOAD
+  </delete>
+
+  <!-- ══ 메인: INSERT ════════════════════════════════════════════ -->
+
+  <insert id="insertUpload" parameterType="com.chipset.model.ChipsetUpload">
+    <selectKey keyProperty="uploadSeq" resultType="long" order="BEFORE">
+      SELECT SQ_CHIPSET_UPLOAD.NEXTVAL FROM DUAL
+    </selectKey>
+    INSERT INTO CHIPSET_UPLOAD (UPLOAD_SEQ, FILE_NM, UPLOAD_DT, ROW_COUNT, COL_COUNT)
+    VALUES (#{uploadSeq}, #{fileNm}, CURRENT_TIMESTAMP, #{rowCount}, #{colCount})
+  </insert>
+
+  <insert id="insertChipCol" parameterType="com.chipset.model.ChipsetChipCol">
+    <selectKey keyProperty="colSeq" resultType="long" order="BEFORE">
+      SELECT SQ_CHIPSET_CHIP_COL.NEXTVAL FROM DUAL
+    </selectKey>
+    INSERT INTO CHIPSET_CHIP_COL
+      (COL_SEQ, UPLOAD_SEQ, VENDOR, COL_IDX, CHIP_NM, CHIP_DT, SORT_ORDER)
+    VALUES
+      (#{colSeq}, #{uploadSeq}, #{vendor}, #{colIdx}, #{chipNm}, #{chipDt}, #{sortOrder})
+  </insert>
+
+  <insert id="insertRow" parameterType="com.chipset.model.ChipsetRow">
+    <selectKey keyProperty="rowSeq" resultType="long" order="BEFORE">
+      SELECT SQ_CHIPSET_ROW.NEXTVAL FROM DUAL
+    </selectKey>
+    INSERT INTO CHIPSET_ROW
+      (ROW_SEQ, UPLOAD_SEQ, DIMM, PRODUCT, VER, DENSITY, ORG, SPEED, SORT_ORDER)
+    VALUES
+      (#{rowSeq}, #{uploadSeq}, #{dimm}, #{product}, #{ver}, #{density}, #{org}, #{speed}, #{sortOrder})
+  </insert>
+
+  <insert id="insertCell" parameterType="com.chipset.model.ChipsetCell">
+    <selectKey keyProperty="cellSeq" resultType="long" order="BEFORE">
+      SELECT SQ_CHIPSET_CELL.NEXTVAL FROM DUAL
+    </selectKey>
+    INSERT INTO CHIPSET_CELL (CELL_SEQ, ROW_SEQ, COL_SEQ, CELL_VALUE, BG_COLOR)
+    VALUES (#{cellSeq}, #{rowSeq}, #{colSeq}, #{cellValue}, #{bgColor})
+  </insert>
+
+  <!-- ══ 메인: SELECT ════════════════════════════════════════════ -->
+
+  <select id="selectLatestUpload" resultType="com.chipset.model.ChipsetUpload">
+    SELECT UPLOAD_SEQ, FILE_NM, UPLOAD_DT, ROW_COUNT, COL_COUNT
+    FROM CHIPSET_UPLOAD
+    ORDER BY UPLOAD_DT DESC
+    FETCH FIRST 1 ROWS ONLY
+  </select>
+
+  <select id="selectChipCols" resultType="com.chipset.model.ChipsetChipCol">
+    SELECT COL_SEQ, UPLOAD_SEQ, VENDOR, COL_IDX, CHIP_NM, CHIP_DT, SORT_ORDER
+    FROM CHIPSET_CHIP_COL
+    ORDER BY SORT_ORDER
+  </select>
+
+  <resultMap id="rowResultMap" type="com.chipset.model.ChipsetRow">
+    <id     property="rowSeq"    column="ROW_SEQ"/>
+    <result property="uploadSeq" column="UPLOAD_SEQ"/>
+    <result property="dimm"      column="DIMM"/>
+    <result property="product"   column="PRODUCT"/>
+    <result property="ver"       column="VER"/>
+    <result property="density"   column="DENSITY"/>
+    <result property="org"       column="ORG"/>
+    <result property="speed"     column="SPEED"/>
+    <result property="sortOrder" column="SORT_ORDER"/>
+    <collection property="cells"
+                ofType="com.chipset.model.ChipsetCell"
+                select="selectCellsByRowSeq"
+                column="ROW_SEQ"/>
+  </resultMap>
+
+  <select id="selectRows" resultMap="rowResultMap">
+    SELECT ROW_SEQ, UPLOAD_SEQ, DIMM, PRODUCT, VER, DENSITY, ORG, SPEED, SORT_ORDER
+    FROM CHIPSET_ROW
+    ORDER BY SORT_ORDER
+  </select>
+
+  <select id="selectCellsByRowSeq" resultType="com.chipset.model.ChipsetCell">
+    SELECT CELL_SEQ, ROW_SEQ, COL_SEQ, CELL_VALUE, BG_COLOR
+    FROM CHIPSET_CELL
+    WHERE ROW_SEQ = #{rowSeq}
+  </select>
+
+  <!-- ══ 히스토리: INSERT ════════════════════════════════════════ -->
+
+  <insert id="insertUploadH" parameterType="com.chipset.model.ChipsetUpload">
+    INSERT INTO CHIPSET_UPLOAD_H
+      (UPLOAD_H_SEQ, UPLOAD_SEQ, FILE_NM, UPLOAD_DT, ROW_COUNT, COL_COUNT)
+    VALUES
+      (SQ_CHIPSET_UPLOAD_H.NEXTVAL, #{uploadSeq}, #{fileNm}, CURRENT_TIMESTAMP, #{rowCount}, #{colCount})
+  </insert>
+
+  <insert id="insertChipColH" parameterType="com.chipset.model.ChipsetChipCol">
+    INSERT INTO CHIPSET_CHIP_COL_H
+      (COL_H_SEQ, COL_SEQ, UPLOAD_SEQ, VENDOR, COL_IDX, CHIP_NM, CHIP_DT, SORT_ORDER)
+    VALUES
+      (SQ_CHIPSET_CHIP_COL_H.NEXTVAL, #{colSeq}, #{uploadSeq},
+       #{vendor}, #{colIdx}, #{chipNm}, #{chipDt}, #{sortOrder})
+  </insert>
+
+  <insert id="insertRowH" parameterType="com.chipset.model.ChipsetRow">
+    INSERT INTO CHIPSET_ROW_H
+      (ROW_H_SEQ, ROW_SEQ, UPLOAD_SEQ, DIMM, PRODUCT, VER, DENSITY, ORG, SPEED, SORT_ORDER)
+    VALUES
+      (SQ_CHIPSET_ROW_H.NEXTVAL, #{rowSeq}, #{uploadSeq},
+       #{dimm}, #{product}, #{ver}, #{density}, #{org}, #{speed}, #{sortOrder})
+  </insert>
+
+  <insert id="insertCellH">
+    INSERT INTO CHIPSET_CELL_H
+      (CELL_H_SEQ, CELL_SEQ, ROW_SEQ, COL_SEQ, UPLOAD_SEQ, CELL_VALUE, BG_COLOR)
+    VALUES
+      (SQ_CHIPSET_CELL_H.NEXTVAL, #{cell.cellSeq}, #{cell.rowSeq}, #{cell.colSeq},
+       #{uploadSeq}, #{cell.cellValue}, #{cell.bgColor})
+  </insert>
+
+  <!-- ══ 히스토리: SELECT ════════════════════════════════════════ -->
+
+  <select id="selectHistory" resultType="com.chipset.model.ChipsetUpload">
+    SELECT UPLOAD_SEQ, FILE_NM, UPLOAD_DT, ROW_COUNT, COL_COUNT
+    FROM CHIPSET_UPLOAD_H
+    ORDER BY UPLOAD_DT DESC
+  </select>
+
+  <select id="selectChipColsH" resultType="com.chipset.model.ChipsetChipCol">
+    SELECT COL_SEQ, UPLOAD_SEQ, VENDOR, COL_IDX, CHIP_NM, CHIP_DT, SORT_ORDER
+    FROM CHIPSET_CHIP_COL_H
+    WHERE UPLOAD_SEQ = #{uploadSeq}
+    ORDER BY SORT_ORDER
+  </select>
+
+  <resultMap id="rowHResultMap" type="com.chipset.model.ChipsetRow">
+    <id     property="rowSeq"    column="ROW_SEQ"/>
+    <result property="uploadSeq" column="UPLOAD_SEQ"/>
+    <result property="dimm"      column="DIMM"/>
+    <result property="product"   column="PRODUCT"/>
+    <result property="ver"       column="VER"/>
+    <result property="density"   column="DENSITY"/>
+    <result property="org"       column="ORG"/>
+    <result property="speed"     column="SPEED"/>
+    <result property="sortOrder" column="SORT_ORDER"/>
+    <collection property="cells"
+                ofType="com.chipset.model.ChipsetCell"
+                select="selectCellsH"
+                column="{rowSeq=ROW_SEQ, uploadSeq=UPLOAD_SEQ}"/>
+  </resultMap>
+
+  <select id="selectRowsH" resultMap="rowHResultMap">
+    SELECT ROW_SEQ, UPLOAD_SEQ, DIMM, PRODUCT, VER, DENSITY, ORG, SPEED, SORT_ORDER
+    FROM CHIPSET_ROW_H
+    WHERE UPLOAD_SEQ = #{uploadSeq}
+    ORDER BY SORT_ORDER
+  </select>
+
+  <select id="selectCellsH" resultType="com.chipset.model.ChipsetCell">
+    SELECT CELL_SEQ, ROW_SEQ, COL_SEQ, CELL_VALUE, BG_COLOR
+    FROM CHIPSET_CELL_H
+    WHERE ROW_SEQ   = #{rowSeq}
+      AND UPLOAD_SEQ = #{uploadSeq}
+  </select>
+
+</mapper>
