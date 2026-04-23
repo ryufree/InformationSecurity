@@ -21,7 +21,6 @@ public class ChipsetExcelParser {
 
         /** 시트 상단 키워드와 파일명으로 타입 자동 감지 */
         public static FileType detect(String filename, Sheet sheet, DataFormatter fmt) {
-            // 상위 4행 스캔
             for (int r = 0; r <= Math.min(3, sheet.getLastRowNum()); r++) {
                 Row row = sheet.getRow(r);
                 if (row == null) continue;
@@ -30,7 +29,6 @@ public class ChipsetExcelParser {
                     if (v.contains("TARGET AP") || v.contains("SORTING KEY")) return RAW_DATA;
                 }
             }
-            // PKG 가 스펙 영역 첫 컬럼에 있으면 Mobile
             for (int r = 0; r <= Math.min(3, sheet.getLastRowNum()); r++) {
                 Row row = sheet.getRow(r);
                 if (row == null) continue;
@@ -41,7 +39,6 @@ public class ChipsetExcelParser {
                     if ("PKG".equals(v)) return MOBILE;
                 }
             }
-            // 파일명으로 SERVER vs CLIENT 구분
             if (filename != null) {
                 String upper = filename.toUpperCase();
                 if (upper.contains("CLIENT")) return CLIENT;
@@ -55,13 +52,15 @@ public class ChipsetExcelParser {
     // ── 파싱 결과 DTO ───────────────────────────────────────────────
 
     public static class ParseResult {
-        public FileType           fileType    = FileType.SERVER;
-        public final List<ChipColDef>      chipColDefs = new ArrayList<>();
-        public final List<RowData>         rows        = new ArrayList<>();
-        public final List<RawDataRowData>  rawDataRows = new ArrayList<>();
+        public FileType                    fileType     = FileType.SERVER;
+        public final List<CellColDef>      cellColDefs  = new ArrayList<>();  // 구 chipColDefs
+        public final List<SpecColDef>      specColDefs  = new ArrayList<>();  // 신규: 스펙 컬럼 메타
+        public final List<RowData>         rows         = new ArrayList<>();
+        public final List<RawDataRowData>  rawDataRows  = new ArrayList<>();
     }
 
-    public static class ChipColDef {
+    /** 셀 컬럼 정의 (벤더 칩셋 컬럼, 구 ChipColDef) */
+    public static class CellColDef {
         public String vendor;
         public int    colIdx;
         public String chipNm;
@@ -69,12 +68,18 @@ public class ChipsetExcelParser {
         public int    sortOrder;
     }
 
+    /** 스펙 컬럼 메타 정의 (좌측 고정 컬럼의 Excel 헤더명) */
+    public static class SpecColDef {
+        public int    colIdx;    // 1-based (1=col1 ... 최대 10=col10)
+        public String colNm;    // Excel 원본 헤더명
+        public int    sortOrder;
+    }
+
     /** Server / Client / Mobile 공용 행 데이터 */
     public static class RowData {
-        // Server/Client: dimm=DIMM, product=Product, ver=Ver, density=Density, org=Org, speed=Speed
-        // Mobile:        dimm=PKG,  product=Product, ver=CodeName, density=Density, org=P/N, speed=""
-        public String dimm, product, ver, density, org, speed;
-        public int    sortOrder;
+        // specVals[0]=col1, specVals[1]=col2, ... (최대 10개)
+        public String[] specVals  = new String[10];
+        public int      sortOrder;
         public final Map<Integer, String> cellValues = new HashMap<>();
         public final Map<Integer, String> cellColors = new HashMap<>();
     }
@@ -93,13 +98,10 @@ public class ChipsetExcelParser {
 
     public static ParseResult parse(File file, String filename) throws Exception {
         ParseResult result = new ParseResult();
-
         try (Workbook wb = WorkbookFactory.create(file)) {
             Sheet sheet = wb.getSheetAt(0);
             DataFormatter fmt = new DataFormatter();
-
             result.fileType = FileType.detect(filename, sheet, fmt);
-
             if (result.fileType == FileType.RAW_DATA) {
                 parseRawData(sheet, fmt, result);
             } else {
@@ -115,15 +117,18 @@ public class ChipsetExcelParser {
         boolean isMobile = (result.fileType == FileType.MOBILE);
 
         int headerRowIdx   = findHeaderRow(sheet, fmt, isMobile);
-        // Mobile: 칩셋명이 headerRow 자체에 있음 (merged F2:Q3)
         int chipNameRowIdx = isMobile ? headerRowIdx : headerRowIdx + 1;
         int dateRowIdx     = isMobile ? headerRowIdx + 2 : headerRowIdx + 2;
         int dataStartIdx   = isMobile ? headerRowIdx + 3 : headerRowIdx + 3;
         int specColCount   = isMobile ? 5 : 6;
 
-        buildChipColDefs(sheet, fmt, headerRowIdx, chipNameRowIdx, dateRowIdx,
+        // 스펙 컬럼 메타 읽기 (Excel 헤더명 → SpecColDef)
+        buildSpecColDefs(sheet, fmt, headerRowIdx, specColCount, result);
+        // 셀 컬럼 구조 파악 (벤더/칩셋 동적 감지)
+        buildCellColDefs(sheet, fmt, headerRowIdx, chipNameRowIdx, dateRowIdx,
                          specColCount, result);
-        parseDataRows(sheet, fmt, dataStartIdx, specColCount, isMobile, result);
+        // 데이터 행 파싱
+        parseDataRows(sheet, fmt, dataStartIdx, specColCount, result);
     }
 
     // ── 헤더 행 탐색 ────────────────────────────────────────────────
@@ -144,9 +149,28 @@ public class ChipsetExcelParser {
         return 0;
     }
 
-    // ── 칩 컬럼 구조 파악 (동적 벤더) ──────────────────────────────
+    // ── 스펙 컬럼 메타 읽기 ─────────────────────────────────────────
 
-    private static void buildChipColDefs(Sheet sheet, DataFormatter fmt,
+    private static void buildSpecColDefs(Sheet sheet, DataFormatter fmt,
+                                         int headerRowIdx, int specColCount,
+                                         ParseResult result) {
+        Row headerRow = sheet.getRow(headerRowIdx);
+        if (headerRow == null) return;
+        for (int i = 0; i < specColCount && i < 10; i++) {
+            Cell cell = headerRow.getCell(i);
+            String nm = (cell != null) ? fmt.formatCellValue(cell).trim() : "";
+            if (nm.isEmpty()) nm = "Col" + (i + 1);
+            SpecColDef scd = new SpecColDef();
+            scd.colIdx    = i + 1;  // 1-based
+            scd.colNm     = nm;
+            scd.sortOrder = i;
+            result.specColDefs.add(scd);
+        }
+    }
+
+    // ── 셀 컬럼 구조 파악 (동적 벤더) ──────────────────────────────
+
+    private static void buildCellColDefs(Sheet sheet, DataFormatter fmt,
                                          int headerRowIdx, int chipNameRowIdx,
                                          int dateRowIdx, int specColCount,
                                          ParseResult result) {
@@ -205,14 +229,14 @@ public class ChipsetExcelParser {
                 String chipNm = fmt.formatCellValue(chipCell).trim();
                 if (chipNm.isEmpty()) continue;
 
-                ChipColDef def = new ChipColDef();
+                CellColDef def = new CellColDef();
                 def.vendor    = vendor;
                 def.colIdx    = c;
                 def.chipNm    = chipNm;
                 def.chipDt    = (dateRow != null && dateRow.getCell(c) != null)
                         ? fmt.formatCellValue(dateRow.getCell(c)).trim() : "";
                 def.sortOrder = sortOrder++;
-                result.chipColDefs.add(def);
+                result.cellColDefs.add(def);
             }
         }
     }
@@ -221,9 +245,9 @@ public class ChipsetExcelParser {
 
     private static void parseDataRows(Sheet sheet, DataFormatter fmt,
                                       int dataStartIdx, int specColCount,
-                                      boolean isMobile, ParseResult result) {
+                                      ParseResult result) {
         Set<Integer> chipColIdxSet = new HashSet<>();
-        for (ChipColDef def : result.chipColDefs) chipColIdxSet.add(def.colIdx);
+        for (CellColDef def : result.cellColDefs) chipColIdxSet.add(def.colIdx);
 
         int sortOrder = 0;
         for (int r = dataStartIdx; r <= sheet.getLastRowNum(); r++) {
@@ -232,22 +256,9 @@ public class ChipsetExcelParser {
             if (isRowEmpty(row, fmt, specColCount)) continue;
 
             RowData rd = new RowData();
-            if (isMobile) {
-                // Mobile: col0=PKG, col1=Density, col2=Product, col3=P/N, col4=CodeName
-                rd.dimm    = getCellStr(row, 0, fmt);  // PKG
-                rd.density = getCellStr(row, 1, fmt);
-                rd.product = getCellStr(row, 2, fmt);
-                rd.org     = getCellStr(row, 3, fmt);  // P/N
-                rd.ver     = getCellStr(row, 4, fmt);  // Code Name (VP/VL/VH)
-                rd.speed   = "";
-            } else {
-                // Server/Client: col0=DIMM, col1=Product, col2=Ver, col3=Density, col4=Org, col5=Speed
-                rd.dimm    = getCellStr(row, 0, fmt);
-                rd.product = getCellStr(row, 1, fmt);
-                rd.ver     = getCellStr(row, 2, fmt);
-                rd.density = getCellStr(row, 3, fmt);
-                rd.org     = getCellStr(row, 4, fmt);
-                rd.speed   = getCellStr(row, 5, fmt);
+            // 스펙 컬럼 값: specVals[0..specColCount-1]
+            for (int i = 0; i < specColCount && i < 10; i++) {
+                rd.specVals[i] = getCellStr(row, i, fmt);
             }
             rd.sortOrder = sortOrder++;
 
@@ -265,16 +276,11 @@ public class ChipsetExcelParser {
     // ── Raw_Data 파싱 ──────────────────────────────────────────────
 
     private static void parseRawData(Sheet sheet, DataFormatter fmt, ParseResult result) {
-        // Row 0: 섹션 헤더 (Target AP, Sorting KEY, Validation Status)
-        // Row 1: 컬럼 헤더 (Company, Seg, Chipset, ...)
-        // Row 2+: 데이터
         int dataStartIdx = 2;
         int sortOrder = 0;
-
         for (int r = dataStartIdx; r <= sheet.getLastRowNum(); r++) {
             Row row = sheet.getRow(r);
             if (row == null) continue;
-            // 주요 컬럼이 모두 비어 있으면 스킵
             if (getCellStr(row, 1, fmt).isEmpty() && getCellStr(row, 3, fmt).isEmpty()) continue;
 
             RawDataRowData rd = new RawDataRowData();

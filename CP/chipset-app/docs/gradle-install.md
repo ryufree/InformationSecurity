@@ -98,16 +98,32 @@ Started ChipsetApplication in X.XXX seconds
 
 ---
 
-## Step 7. 동작 확인
+## Step 7. DB 스키마(Oracle) 적용
+
+`backend/src/main/resources/application.yml` 기본 설정은 **Oracle + `spring.sql.init.mode: never`** 이므로,
+앱이 `schema.sql`을 자동으로 실행하지 않습니다.
+
+처음 실행(또는 스키마 변경 후)에는 DBeaver 같은 툴로 아래 파일을 실행해 테이블/시퀀스를 생성하세요:
+
+- `backend/src/main/resources/schema.sql`
+
+기존 테이블이 구버전이라 충돌한다면(예: `ORA-00904`, `ORA-00942`) 필요 시 아래도 함께 사용합니다:
+
+- `backend/src/main/resources/schema-drop.sql`
+
+---
+
+## Step 8. 동작 확인
 
 브라우저에서 프론트엔드:
 ```
 http://localhost:5173
 ```
 
-백엔드 API 직접 확인:
+백엔드 API 직접 확인(포트 9090):
 ```
-http://localhost:8080/api/chipset/list
+http://localhost:9090/api/chipset/matrix?type=SERVER
+http://localhost:9090/api/chipset/rawdata
 ```
 
 ---

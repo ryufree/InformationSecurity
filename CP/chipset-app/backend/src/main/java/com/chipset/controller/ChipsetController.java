@@ -21,13 +21,8 @@ public class ChipsetController {
      */
     @PostMapping("/upload")
     public ResponseEntity<UploadResult> upload(
-            @RequestParam("file") MultipartFile file) {
-        try {
-            return ResponseEntity.ok(chipsetService.upload(file));
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError()
-                    .body(UploadResult.error("서버 오류: " + e.getMessage()));
-        }
+            @RequestParam("file") MultipartFile file) throws Exception {
+        return ResponseEntity.ok(chipsetService.upload(file));
     }
 
     /**

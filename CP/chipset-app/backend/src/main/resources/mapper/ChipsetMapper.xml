@@ -6,13 +6,11 @@
 
   <!-- ══ 메인: DELETE (파일 타입별) ══════════════════════════════ -->
 
+  <!-- CHIPSET_CELL 에 UPLOAD_SEQ 추가로 서브쿼리 중첩 제거 -->
   <delete id="deleteCellsByFileType">
     DELETE FROM CHIPSET_CELL
-    WHERE ROW_SEQ IN (
-      SELECT ROW_SEQ FROM CHIPSET_ROW
-      WHERE UPLOAD_SEQ IN (
-        SELECT UPLOAD_SEQ FROM CHIPSET_UPLOAD WHERE FILE_TYPE = #{fileType}
-      )
+    WHERE UPLOAD_SEQ IN (
+      SELECT UPLOAD_SEQ FROM CHIPSET_UPLOAD WHERE FILE_TYPE = #{fileType}
     )
   </delete>
 
@@ -23,8 +21,17 @@
     )
   </delete>
 
-  <delete id="deleteChipColsByFileType">
-    DELETE FROM CHIPSET_CHIP_COL
+  <!-- 구 deleteChipColsByFileType → deleteCellColsByFileType -->
+  <delete id="deleteCellColsByFileType">
+    DELETE FROM CHIPSET_CELL_COL
+    WHERE UPLOAD_SEQ IN (
+      SELECT UPLOAD_SEQ FROM CHIPSET_UPLOAD WHERE FILE_TYPE = #{fileType}
+    )
+  </delete>
+
+  <!-- 신규: 스펙 컬럼 메타 삭제 -->
+  <delete id="deleteSpecColsByFileType">
+    DELETE FROM CHIPSET_SPEC_COL
     WHERE UPLOAD_SEQ IN (
       SELECT UPLOAD_SEQ FROM CHIPSET_UPLOAD WHERE FILE_TYPE = #{fileType}
     )
@@ -51,32 +58,47 @@
     VALUES (#{uploadSeq}, #{fileNm}, #{fileType}, CURRENT_TIMESTAMP, #{rowCount}, #{colCount})
   </insert>
 
-  <insert id="insertChipCol" parameterType="com.chipset.model.ChipsetChipCol">
+  <!-- 구 insertChipCol → insertCellCol, 테이블명 CHIPSET_CHIP_COL → CHIPSET_CELL_COL -->
+  <insert id="insertCellCol" parameterType="com.chipset.model.ChipsetCellCol">
     <selectKey keyProperty="colSeq" resultType="long" order="BEFORE">
-      SELECT SQ_CHIPSET_CHIP_COL.NEXTVAL FROM DUAL
+      SELECT SQ_CHIPSET_CELL_COL.NEXTVAL FROM DUAL
     </selectKey>
-    INSERT INTO CHIPSET_CHIP_COL
+    INSERT INTO CHIPSET_CELL_COL
       (COL_SEQ, UPLOAD_SEQ, VENDOR, COL_IDX, CHIP_NM, CHIP_DT, SORT_ORDER)
     VALUES
       (#{colSeq}, #{uploadSeq}, #{vendor}, #{colIdx}, #{chipNm}, #{chipDt}, #{sortOrder})
   </insert>
 
+  <!-- 신규: 스펙 컬럼 메타 INSERT -->
+  <insert id="insertSpecCol" parameterType="com.chipset.model.ChipsetSpecCol">
+    <selectKey keyProperty="specColSeq" resultType="long" order="BEFORE">
+      SELECT SQ_CHIPSET_SPEC_COL.NEXTVAL FROM DUAL
+    </selectKey>
+    INSERT INTO CHIPSET_SPEC_COL (SPEC_COL_SEQ, UPLOAD_SEQ, COL_IDX, COL_NM, SORT_ORDER)
+    VALUES (#{specColSeq}, #{uploadSeq}, #{colIdx}, #{colNm}, #{sortOrder})
+  </insert>
+
+  <!-- CHIPSET_ROW: dimm/product/ver/density/org/speed → col1..col10 -->
   <insert id="insertRow" parameterType="com.chipset.model.ChipsetRow">
     <selectKey keyProperty="rowSeq" resultType="long" order="BEFORE">
       SELECT SQ_CHIPSET_ROW.NEXTVAL FROM DUAL
     </selectKey>
     INSERT INTO CHIPSET_ROW
-      (ROW_SEQ, UPLOAD_SEQ, DIMM, PRODUCT, VER, DENSITY, ORG, SPEED, SORT_ORDER)
+      (ROW_SEQ, UPLOAD_SEQ, COL1, COL2, COL3, COL4, COL5, COL6, COL7, COL8, COL9, COL10, SORT_ORDER)
     VALUES
-      (#{rowSeq}, #{uploadSeq}, #{dimm}, #{product}, #{ver}, #{density}, #{org}, #{speed}, #{sortOrder})
+      (#{rowSeq}, #{uploadSeq},
+       #{col1}, #{col2}, #{col3}, #{col4}, #{col5},
+       #{col6}, #{col7}, #{col8}, #{col9}, #{col10},
+       #{sortOrder})
   </insert>
 
+  <!-- CHIPSET_CELL: UPLOAD_SEQ 컬럼 추가 -->
   <insert id="insertCell" parameterType="com.chipset.model.ChipsetCell">
     <selectKey keyProperty="cellSeq" resultType="long" order="BEFORE">
       SELECT SQ_CHIPSET_CELL.NEXTVAL FROM DUAL
     </selectKey>
-    INSERT INTO CHIPSET_CELL (CELL_SEQ, ROW_SEQ, COL_SEQ, CELL_VALUE, BG_COLOR)
-    VALUES (#{cellSeq}, #{rowSeq}, #{colSeq}, #{cellValue}, #{bgColor})
+    INSERT INTO CHIPSET_CELL (CELL_SEQ, ROW_SEQ, COL_SEQ, UPLOAD_SEQ, CELL_VALUE, BG_COLOR)
+    VALUES (#{cellSeq}, #{rowSeq}, #{colSeq}, #{uploadSeq}, #{cellValue}, #{bgColor})
   </insert>
 
   <insert id="insertRawDataRow" parameterType="com.chipset.model.RawDataRow">
@@ -110,9 +132,10 @@
     FETCH FIRST 1 ROWS ONLY
   </select>
 
-  <select id="selectChipColsByType" resultType="com.chipset.model.ChipsetChipCol">
+  <!-- 구 selectChipColsByType → selectCellColsByType -->
+  <select id="selectCellColsByType" resultType="com.chipset.model.ChipsetCellCol">
     SELECT c.COL_SEQ, c.UPLOAD_SEQ, c.VENDOR, c.COL_IDX, c.CHIP_NM, c.CHIP_DT, c.SORT_ORDER
-    FROM CHIPSET_CHIP_COL c
+    FROM CHIPSET_CELL_COL c
     JOIN CHIPSET_UPLOAD u ON c.UPLOAD_SEQ = u.UPLOAD_SEQ
     WHERE u.FILE_TYPE = #{fileType}
       AND u.UPLOAD_SEQ = (
@@ -124,15 +147,33 @@
     ORDER BY c.SORT_ORDER
   </select>
 
+  <!-- 신규: 스펙 컬럼 메타 SELECT (타입별) -->
+  <select id="selectSpecColsByType" resultType="com.chipset.model.ChipsetSpecCol">
+    SELECT s.SPEC_COL_SEQ, s.UPLOAD_SEQ, s.COL_IDX, s.COL_NM, s.SORT_ORDER
+    FROM CHIPSET_SPEC_COL s
+    WHERE s.UPLOAD_SEQ = (
+      SELECT UPLOAD_SEQ FROM CHIPSET_UPLOAD
+      WHERE FILE_TYPE = #{fileType}
+      ORDER BY UPLOAD_DT DESC
+      FETCH FIRST 1 ROWS ONLY
+    )
+    ORDER BY s.SORT_ORDER
+  </select>
+
+  <!-- CHIPSET_ROW: col1..col10 매핑 -->
   <resultMap id="rowResultMap" type="com.chipset.model.ChipsetRow">
     <id     property="rowSeq"    column="ROW_SEQ"/>
     <result property="uploadSeq" column="UPLOAD_SEQ"/>
-    <result property="dimm"      column="DIMM"/>
-    <result property="product"   column="PRODUCT"/>
-    <result property="ver"       column="VER"/>
-    <result property="density"   column="DENSITY"/>
-    <result property="org"       column="ORG"/>
-    <result property="speed"     column="SPEED"/>
+    <result property="col1"      column="COL1"/>
+    <result property="col2"      column="COL2"/>
+    <result property="col3"      column="COL3"/>
+    <result property="col4"      column="COL4"/>
+    <result property="col5"      column="COL5"/>
+    <result property="col6"      column="COL6"/>
+    <result property="col7"      column="COL7"/>
+    <result property="col8"      column="COL8"/>
+    <result property="col9"      column="COL9"/>
+    <result property="col10"     column="COL10"/>
     <result property="sortOrder" column="SORT_ORDER"/>
     <collection property="cells"
                 ofType="com.chipset.model.ChipsetCell"
@@ -141,7 +182,9 @@
   </resultMap>
 
   <select id="selectRowsByType" resultMap="rowResultMap">
-    SELECT ROW_SEQ, UPLOAD_SEQ, DIMM, PRODUCT, VER, DENSITY, ORG, SPEED, SORT_ORDER
+    SELECT ROW_SEQ, UPLOAD_SEQ,
+           COL1, COL2, COL3, COL4, COL5, COL6, COL7, COL8, COL9, COL10,
+           SORT_ORDER
     FROM CHIPSET_ROW
     WHERE UPLOAD_SEQ = (
       SELECT UPLOAD_SEQ FROM CHIPSET_UPLOAD
@@ -152,8 +195,9 @@
     ORDER BY SORT_ORDER
   </select>
 
+  <!-- CHIPSET_CELL: UPLOAD_SEQ 포함 -->
   <select id="selectCellsByRowSeq" resultType="com.chipset.model.ChipsetCell">
-    SELECT CELL_SEQ, ROW_SEQ, COL_SEQ, CELL_VALUE, BG_COLOR
+    SELECT CELL_SEQ, ROW_SEQ, COL_SEQ, UPLOAD_SEQ, CELL_VALUE, BG_COLOR
     FROM CHIPSET_CELL
     WHERE ROW_SEQ = #{rowSeq}
   </select>
@@ -185,28 +229,44 @@
        CURRENT_TIMESTAMP, #{rowCount}, #{colCount})
   </insert>
 
-  <insert id="insertChipColH" parameterType="com.chipset.model.ChipsetChipCol">
-    INSERT INTO CHIPSET_CHIP_COL_H
+  <!-- 구 insertChipColH → insertCellColH, 테이블명 변경 -->
+  <insert id="insertCellColH" parameterType="com.chipset.model.ChipsetCellCol">
+    INSERT INTO CHIPSET_CELL_COL_H
       (COL_H_SEQ, COL_SEQ, UPLOAD_SEQ, VENDOR, COL_IDX, CHIP_NM, CHIP_DT, SORT_ORDER)
     VALUES
-      (SQ_CHIPSET_CHIP_COL_H.NEXTVAL, #{colSeq}, #{uploadSeq},
+      (SQ_CHIPSET_CELL_COL_H.NEXTVAL, #{colSeq}, #{uploadSeq},
        #{vendor}, #{colIdx}, #{chipNm}, #{chipDt}, #{sortOrder})
   </insert>
 
-  <insert id="insertRowH" parameterType="com.chipset.model.ChipsetRow">
-    INSERT INTO CHIPSET_ROW_H
-      (ROW_H_SEQ, ROW_SEQ, UPLOAD_SEQ, DIMM, PRODUCT, VER, DENSITY, ORG, SPEED, SORT_ORDER)
+  <!-- 신규: 스펙 컬럼 메타 히스토리 INSERT -->
+  <insert id="insertSpecColH" parameterType="com.chipset.model.ChipsetSpecCol">
+    INSERT INTO CHIPSET_SPEC_COL_H
+      (SPEC_COL_H_SEQ, SPEC_COL_SEQ, UPLOAD_SEQ, COL_IDX, COL_NM, SORT_ORDER)
     VALUES
-      (SQ_CHIPSET_ROW_H.NEXTVAL, #{rowSeq}, #{uploadSeq},
-       #{dimm}, #{product}, #{ver}, #{density}, #{org}, #{speed}, #{sortOrder})
+      (SQ_CHIPSET_SPEC_COL_H.NEXTVAL, #{specColSeq}, #{uploadSeq},
+       #{colIdx}, #{colNm}, #{sortOrder})
   </insert>
 
-  <insert id="insertCellH">
+  <!-- CHIPSET_ROW_H: col1..col10 -->
+  <insert id="insertRowH" parameterType="com.chipset.model.ChipsetRow">
+    INSERT INTO CHIPSET_ROW_H
+      (ROW_H_SEQ, ROW_SEQ, UPLOAD_SEQ,
+       COL1, COL2, COL3, COL4, COL5, COL6, COL7, COL8, COL9, COL10,
+       SORT_ORDER)
+    VALUES
+      (SQ_CHIPSET_ROW_H.NEXTVAL, #{rowSeq}, #{uploadSeq},
+       #{col1}, #{col2}, #{col3}, #{col4}, #{col5},
+       #{col6}, #{col7}, #{col8}, #{col9}, #{col10},
+       #{sortOrder})
+  </insert>
+
+  <!-- CHIPSET_CELL_H: uploadSeq 이제 cell 객체에 포함 -->
+  <insert id="insertCellH" parameterType="com.chipset.model.ChipsetCell">
     INSERT INTO CHIPSET_CELL_H
       (CELL_H_SEQ, CELL_SEQ, ROW_SEQ, COL_SEQ, UPLOAD_SEQ, CELL_VALUE, BG_COLOR)
     VALUES
-      (SQ_CHIPSET_CELL_H.NEXTVAL, #{cell.cellSeq}, #{cell.rowSeq}, #{cell.colSeq},
-       #{uploadSeq}, #{cell.cellValue}, #{cell.bgColor})
+      (SQ_CHIPSET_CELL_H.NEXTVAL, #{cellSeq}, #{rowSeq}, #{colSeq},
+       #{uploadSeq}, #{cellValue}, #{bgColor})
   </insert>
 
   <insert id="insertRawDataRowH">
@@ -236,22 +296,36 @@
     ORDER BY UPLOAD_DT DESC
   </select>
 
-  <select id="selectChipColsH" resultType="com.chipset.model.ChipsetChipCol">
+  <!-- 구 selectChipColsH → selectCellColsH -->
+  <select id="selectCellColsH" resultType="com.chipset.model.ChipsetCellCol">
     SELECT COL_SEQ, UPLOAD_SEQ, VENDOR, COL_IDX, CHIP_NM, CHIP_DT, SORT_ORDER
-    FROM CHIPSET_CHIP_COL_H
+    FROM CHIPSET_CELL_COL_H
     WHERE UPLOAD_SEQ = #{uploadSeq}
     ORDER BY SORT_ORDER
   </select>
 
+  <!-- 신규: 스펙 컬럼 메타 히스토리 SELECT -->
+  <select id="selectSpecColsH" resultType="com.chipset.model.ChipsetSpecCol">
+    SELECT SPEC_COL_SEQ, UPLOAD_SEQ, COL_IDX, COL_NM, SORT_ORDER
+    FROM CHIPSET_SPEC_COL_H
+    WHERE UPLOAD_SEQ = #{uploadSeq}
+    ORDER BY SORT_ORDER
+  </select>
+
+  <!-- CHIPSET_ROW_H: col1..col10 매핑 -->
   <resultMap id="rowHResultMap" type="com.chipset.model.ChipsetRow">
     <id     property="rowSeq"    column="ROW_SEQ"/>
     <result property="uploadSeq" column="UPLOAD_SEQ"/>
-    <result property="dimm"      column="DIMM"/>
-    <result property="product"   column="PRODUCT"/>
-    <result property="ver"       column="VER"/>
-    <result property="density"   column="DENSITY"/>
-    <result property="org"       column="ORG"/>
-    <result property="speed"     column="SPEED"/>
+    <result property="col1"      column="COL1"/>
+    <result property="col2"      column="COL2"/>
+    <result property="col3"      column="COL3"/>
+    <result property="col4"      column="COL4"/>
+    <result property="col5"      column="COL5"/>
+    <result property="col6"      column="COL6"/>
+    <result property="col7"      column="COL7"/>
+    <result property="col8"      column="COL8"/>
+    <result property="col9"      column="COL9"/>
+    <result property="col10"     column="COL10"/>
     <result property="sortOrder" column="SORT_ORDER"/>
     <collection property="cells"
                 ofType="com.chipset.model.ChipsetCell"
@@ -260,14 +334,17 @@
   </resultMap>
 
   <select id="selectRowsH" resultMap="rowHResultMap">
-    SELECT ROW_SEQ, UPLOAD_SEQ, DIMM, PRODUCT, VER, DENSITY, ORG, SPEED, SORT_ORDER
+    SELECT ROW_SEQ, UPLOAD_SEQ,
+           COL1, COL2, COL3, COL4, COL5, COL6, COL7, COL8, COL9, COL10,
+           SORT_ORDER
     FROM CHIPSET_ROW_H
     WHERE UPLOAD_SEQ = #{uploadSeq}
     ORDER BY SORT_ORDER
   </select>
 
+  <!-- CHIPSET_CELL_H: UPLOAD_SEQ 포함 -->
   <select id="selectCellsH" resultType="com.chipset.model.ChipsetCell">
-    SELECT CELL_SEQ, ROW_SEQ, COL_SEQ, CELL_VALUE, BG_COLOR
+    SELECT CELL_SEQ, ROW_SEQ, COL_SEQ, UPLOAD_SEQ, CELL_VALUE, BG_COLOR
     FROM CHIPSET_CELL_H
     WHERE ROW_SEQ    = #{rowSeq}
       AND UPLOAD_SEQ = #{uploadSeq}
