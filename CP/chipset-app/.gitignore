@@ -33,6 +33,9 @@ build/
 out/
 target/
 
+# NOTE: `src/**/resources/**` often contains source `*.sql` / `*.xml`
+# (e.g. schema.sql, MyBatis mapper.xml). Do NOT globally ignore `*.sql`/`*.xml` here.
+
 # Java / JVM build outputs
 *.class
 bin/
