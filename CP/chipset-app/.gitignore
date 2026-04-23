@@ -32,3 +32,11 @@ dist-ssr
 build/
 out/
 target/
+
+# Java / JVM build outputs
+*.class
+bin/
+
+# Lock / binary artifacts
+*.lock
+*.bin
