@@ -9,41 +9,38 @@ import java.util.List;
 @Mapper
 public interface ChipsetMapper {
 
-    // ── 메인: DELETE (파일 타입별) ──────────────────────────────
-    void deleteCellsByFileType(@Param("fileType") String fileType);      // UPLOAD_SEQ 직접 사용으로 단순화
-    void deleteRowsByFileType(@Param("fileType") String fileType);
-    void deleteCellColsByFileType(@Param("fileType") String fileType);   // 구 deleteChipColsByFileType
-    void deleteSpecColsByFileType(@Param("fileType") String fileType);   // 신규
+    // ── 메인: DELETE (파일 타입별) ──────────────────────────────────
+    void deleteCellsByFileType(@Param("fileType") String fileType);
+    void deleteChipColsByFileType(@Param("fileType") String fileType);
+    void deleteSpecColsByFileType(@Param("fileType") String fileType);
+    void deleteRawdataColsByFileType(@Param("fileType") String fileType);
     void deleteUploadsByFileType(@Param("fileType") String fileType);
-    void deleteRawDataRowsByFileType(@Param("fileType") String fileType);
 
-    // ── 메인: INSERT ─────────────────────────────────────────────
+    // ── 메인: INSERT ─────────────────────────────────────────────────
     void insertUpload(ChipsetUpload upload);
-    void insertCellCol(ChipsetCellCol col);       // 구 insertChipCol
-    void insertSpecCol(ChipsetSpecCol specCol);   // 신규
-    void insertRow(ChipsetRow row);
+    void insertChipCol(ChipsetChipCol col);
+    void insertSpecCol(ChipsetSpecCol specCol);
+    void insertRawdataCol(ChipsetRawdataCol col);
     void insertCell(ChipsetCell cell);
-    void insertRawDataRow(RawDataRow row);
 
-    // ── 메인: SELECT (타입별) ─────────────────────────────────────
-    ChipsetUpload        selectLatestUploadByType(@Param("fileType") String fileType);
-    List<ChipsetCellCol> selectCellColsByType(@Param("fileType") String fileType);    // 구 selectChipColsByType
-    List<ChipsetSpecCol> selectSpecColsByType(@Param("fileType") String fileType);    // 신규
-    List<ChipsetRow>     selectRowsByType(@Param("fileType") String fileType);
-    List<RawDataRow>     selectRawDataRowsByType(@Param("fileType") String fileType);
+    // ── 메인: SELECT ─────────────────────────────────────────────────
+    ChipsetUpload           selectLatestUploadByType(@Param("fileType") String fileType);
+    List<ChipsetChipCol>    selectChipColsByType(@Param("fileType") String fileType);
+    List<ChipsetSpecCol>    selectSpecColsByType(@Param("fileType") String fileType);
+    List<ChipsetRawdataCol> selectRawdataColsByType(@Param("fileType") String fileType);
+    List<ChipsetCell>       selectCellsByUploadSeq(@Param("uploadSeq") Long uploadSeq);
 
-    // ── 히스토리: INSERT ─────────────────────────────────────────
+    // ── 히스토리: INSERT ─────────────────────────────────────────────
     void insertUploadH(ChipsetUpload upload);
-    void insertCellColH(ChipsetCellCol col);       // 구 insertChipColH
-    void insertSpecColH(ChipsetSpecCol specCol);   // 신규
-    void insertRowH(ChipsetRow row);
-    void insertCellH(ChipsetCell cell);            // uploadSeq 이제 cell 객체에 포함
-    void insertRawDataRowH(@Param("row") RawDataRow row);
+    void insertChipColH(ChipsetChipCol col);
+    void insertSpecColH(ChipsetSpecCol specCol);
+    void insertRawdataColH(ChipsetRawdataCol col);
+    void insertCellH(ChipsetCell cell);
 
-    // ── 히스토리: SELECT ─────────────────────────────────────────
-    List<ChipsetUpload>  selectHistoryByType(@Param("fileType") String fileType);
-    List<ChipsetCellCol> selectCellColsH(@Param("uploadSeq") Long uploadSeq);        // 구 selectChipColsH
-    List<ChipsetSpecCol> selectSpecColsH(@Param("uploadSeq") Long uploadSeq);        // 신규
-    List<ChipsetRow>     selectRowsH(@Param("uploadSeq") Long uploadSeq);
-    List<RawDataRow>     selectRawDataRowsH(@Param("uploadSeq") Long uploadSeq);
+    // ── 히스토리: SELECT ─────────────────────────────────────────────
+    List<ChipsetUpload>     selectHistoryByType(@Param("fileType") String fileType);
+    List<ChipsetChipCol>    selectChipColsH(@Param("uploadSeq") Long uploadSeq);
+    List<ChipsetSpecCol>    selectSpecColsH(@Param("uploadSeq") Long uploadSeq);
+    List<ChipsetRawdataCol> selectRawdataColsH(@Param("uploadSeq") Long uploadSeq);
+    List<ChipsetCell>       selectCellsHByUploadSeq(@Param("uploadSeq") Long uploadSeq);
 }

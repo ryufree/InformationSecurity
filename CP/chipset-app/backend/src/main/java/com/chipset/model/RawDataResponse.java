@@ -6,8 +6,9 @@ import java.util.List;
 
 @Data
 public class RawDataResponse {
-    private Long          uploadSeq;
-    private Date          uploadDt;
-    private String        fileType;
-    private List<RawDataRow> rows;
+    private Long                    uploadSeq;
+    private Date                    uploadDt;
+    private String                  fileType;
+    private List<ChipsetRawdataCol> rawdataCols;
+    private List<RawDataRow>        rows;
 }

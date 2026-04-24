@@ -4,7 +4,8 @@ import lombok.Data;
 import java.util.List;
 
 @Data
-public class RawDataRow {
+public class MatrixRow {
     private Integer           rowIdx;
-    private List<ChipsetCell> cells;
+    private List<ChipsetCell> specCells;
+    private List<ChipsetCell> chipCells;
 }

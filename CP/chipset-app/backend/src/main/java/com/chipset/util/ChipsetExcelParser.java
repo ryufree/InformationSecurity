@@ -52,14 +52,15 @@ public class ChipsetExcelParser {
     // ── 파싱 결과 DTO ───────────────────────────────────────────────
 
     public static class ParseResult {
-        public FileType                    fileType     = FileType.SERVER;
-        public final List<CellColDef>      cellColDefs  = new ArrayList<>();  // 구 chipColDefs
-        public final List<SpecColDef>      specColDefs  = new ArrayList<>();  // 신규: 스펙 컬럼 메타
-        public final List<RowData>         rows         = new ArrayList<>();
-        public final List<RawDataRowData>  rawDataRows  = new ArrayList<>();
+        public FileType                   fileType       = FileType.SERVER;
+        public final List<CellColDef>     cellColDefs    = new ArrayList<>();
+        public final List<SpecColDef>     specColDefs    = new ArrayList<>();
+        public final List<RowData>        rows           = new ArrayList<>();
+        public final List<RawDataColDef>  rawDataColDefs = new ArrayList<>();
+        public final List<RawDataRowData> rawDataRows    = new ArrayList<>();
     }
 
-    /** 셀 컬럼 정의 (벤더 칩셋 컬럼, 구 ChipColDef) */
+    /** 칩셋 컬럼 정의 (벤더/칩셋 헤더 행) */
     public static class CellColDef {
         public String vendor;
         public int    colIdx;
@@ -70,28 +71,30 @@ public class ChipsetExcelParser {
 
     /** 스펙 컬럼 메타 정의 (좌측 고정 컬럼의 Excel 헤더명) */
     public static class SpecColDef {
-        public int    colIdx;    // 1-based (1=col1 ... 최대 10=col10)
-        public String colNm;    // Excel 원본 헤더명
+        public int    colIdx;    // 1-based
+        public String colNm;
+        public int    sortOrder;
+    }
+
+    /** RawData 컬럼 정의 (0-based Excel 컬럼 인덱스) */
+    public static class RawDataColDef {
+        public int    colIdx;    // 0-based Excel column index
+        public String colNm;
         public int    sortOrder;
     }
 
     /** Server / Client / Mobile 공용 행 데이터 */
     public static class RowData {
-        // specVals[0]=col1, specVals[1]=col2, ... (최대 10개)
         public String[] specVals  = new String[10];
         public int      sortOrder;
         public final Map<Integer, String> cellValues = new HashMap<>();
         public final Map<Integer, String> cellColors = new HashMap<>();
     }
 
-    /** Raw_Data 전용 행 데이터 */
+    /** Raw_Data 행 데이터 (generic — colIdx → value) */
     public static class RawDataRowData {
-        public String company, seg, chipset, socCs, partNumber;
-        public String dramProcess, flashProcess, density, mlcTlc, pkg;
-        public String val1Date, val1Eng, val1Status, val1Remark;
-        public String val2Date, val2Eng, val2Status, val2Remark;
-        public String val3Date, val3Eng;
-        public int sortOrder;
+        public int rowIdx;
+        public final Map<Integer, String> cellValues = new HashMap<>();
     }
 
     // ── 진입점 ─────────────────────────────────────────────────────
@@ -122,12 +125,9 @@ public class ChipsetExcelParser {
         int dataStartIdx   = isMobile ? headerRowIdx + 3 : headerRowIdx + 3;
         int specColCount   = isMobile ? 5 : 6;
 
-        // 스펙 컬럼 메타 읽기 (Excel 헤더명 → SpecColDef)
         buildSpecColDefs(sheet, fmt, headerRowIdx, specColCount, result);
-        // 셀 컬럼 구조 파악 (벤더/칩셋 동적 감지)
         buildCellColDefs(sheet, fmt, headerRowIdx, chipNameRowIdx, dateRowIdx,
                          specColCount, result);
-        // 데이터 행 파싱
         parseDataRows(sheet, fmt, dataStartIdx, specColCount, result);
     }
 
@@ -256,7 +256,6 @@ public class ChipsetExcelParser {
             if (isRowEmpty(row, fmt, specColCount)) continue;
 
             RowData rd = new RowData();
-            // 스펙 컬럼 값: specVals[0..specColCount-1]
             for (int i = 0; i < specColCount && i < 10; i++) {
                 rd.specVals[i] = getCellStr(row, i, fmt);
             }
@@ -274,37 +273,46 @@ public class ChipsetExcelParser {
     }
 
     // ── Raw_Data 파싱 ──────────────────────────────────────────────
+    // Row 0: 섹션 그룹 헤더 (Target AP / Sorting KEY / Validation Status)
+    // Row 1: 컬럼 헤더 (Company, Seg, Chipset, ...)
+    // Row 2+: 데이터
 
     private static void parseRawData(Sheet sheet, DataFormatter fmt, ParseResult result) {
+        int headerRowIdx = 1;
         int dataStartIdx = 2;
-        int sortOrder = 0;
+
+        // 컬럼 헤더 읽기
+        Row headerRow = sheet.getRow(headerRowIdx);
+        if (headerRow != null) {
+            int sortOrder = 0;
+            int lastCol = headerRow.getLastCellNum();
+            for (int c = 1; c < lastCol; c++) {
+                Cell cell = headerRow.getCell(c);
+                if (cell == null) continue;
+                String nm = fmt.formatCellValue(cell).trim();
+                if (nm.isEmpty()) continue;
+                RawDataColDef def = new RawDataColDef();
+                def.colIdx    = c;
+                def.colNm     = nm;
+                def.sortOrder = sortOrder++;
+                result.rawDataColDefs.add(def);
+            }
+        }
+
+        Set<Integer> colIdxSet = new HashSet<>();
+        for (RawDataColDef def : result.rawDataColDefs) colIdxSet.add(def.colIdx);
+
+        int rowIdx = 0;
         for (int r = dataStartIdx; r <= sheet.getLastRowNum(); r++) {
             Row row = sheet.getRow(r);
             if (row == null) continue;
             if (getCellStr(row, 1, fmt).isEmpty() && getCellStr(row, 3, fmt).isEmpty()) continue;
 
             RawDataRowData rd = new RawDataRowData();
-            rd.company      = getCellStr(row,  1, fmt);
-            rd.seg          = getCellStr(row,  2, fmt);
-            rd.chipset      = getCellStr(row,  3, fmt);
-            rd.socCs        = getCellStr(row,  4, fmt);
-            rd.partNumber   = getCellStr(row,  5, fmt);
-            rd.dramProcess  = getCellStr(row,  6, fmt);
-            rd.flashProcess = getCellStr(row,  7, fmt);
-            rd.density      = getCellStr(row,  8, fmt);
-            rd.mlcTlc       = getCellStr(row,  9, fmt);
-            rd.pkg          = getCellStr(row, 10, fmt);
-            rd.val1Date     = getCellStr(row, 11, fmt);
-            rd.val1Eng      = getCellStr(row, 12, fmt);
-            rd.val1Status   = getCellStr(row, 13, fmt);
-            rd.val1Remark   = getCellStr(row, 14, fmt);
-            rd.val2Date     = getCellStr(row, 15, fmt);
-            rd.val2Eng      = getCellStr(row, 16, fmt);
-            rd.val2Status   = getCellStr(row, 17, fmt);
-            rd.val2Remark   = getCellStr(row, 18, fmt);
-            rd.val3Date     = getCellStr(row, 19, fmt);
-            rd.val3Eng      = getCellStr(row, 20, fmt);
-            rd.sortOrder    = sortOrder++;
+            rd.rowIdx = rowIdx++;
+            for (int colIdx : colIdxSet) {
+                rd.cellValues.put(colIdx, getCellStr(row, colIdx, fmt));
+            }
             result.rawDataRows.add(rd);
         }
     }

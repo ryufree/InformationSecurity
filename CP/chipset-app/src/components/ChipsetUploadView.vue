@@ -94,7 +94,7 @@
                  style="width:82px; min-width:82px">
           </colgroup>
           <thead>
-            <!-- 행 1: 벤더 그룹 (Intel / AMD / ...) -->
+            <!-- 행 1: 벤더 그룹 -->
             <tr>
               <th v-for="(spec, i) in SPEC_COLS" :key="'h1s'+i"
                   :style="frozenThStyle(i, 0, true)"></th>
@@ -126,17 +126,17 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in currentData.rows" :key="row.rowSeq"
+            <tr v-for="row in currentData.rows" :key="row.rowIdx"
                 style="border-bottom:1px solid #1a1c24"
-                @mouseenter="hoverRow = row.rowSeq"
+                @mouseenter="hoverRow = row.rowIdx"
                 @mouseleave="hoverRow = null">
               <td v-for="(spec, i) in SPEC_COLS" :key="'ds'+i"
-                  :style="frozenTdStyle(i, hoverRow === row.rowSeq)">
-                {{ row[spec.key] ?? '' }}
+                  :style="frozenTdStyle(i, hoverRow === row.rowIdx)">
+                {{ specCellValue(row, spec) }}
               </td>
               <td v-for="col in currentData.chipCols" :key="'dc'+col.colSeq"
-                  :style="chipCellStyle(row, col, hoverRow === row.rowSeq)">
-                {{ cellValue(row, col) }}
+                  :style="chipCellStyle(row, col, hoverRow === row.rowIdx)">
+                {{ chipCellValue(row, col) }}
               </td>
             </tr>
           </tbody>
@@ -157,45 +157,33 @@
            style="overflow-x:auto; overflow-y:auto; max-height:calc(100vh - 210px)">
         <table style="border-collapse:separate; border-spacing:0; white-space:nowrap; min-width:max-content">
           <thead>
+            <!-- 섹션 그룹 헤더 -->
             <tr>
-              <th colspan="4"
-                  style="text-align:center; font-weight:700; font-size:10px; letter-spacing:.1em;
-                         padding:6px 8px; position:sticky; top:0; z-index:10;
-                         background:#0d1f38; color:#93c5fd; border-right:1px solid #1a2035;
-                         border-bottom:1px solid #1e293b">
-                Target AP
-              </th>
-              <th colspan="6"
-                  style="text-align:center; font-weight:700; font-size:10px; letter-spacing:.1em;
-                         padding:6px 8px; position:sticky; top:0; z-index:10;
-                         background:#102840; color:#93c5fd; border-right:1px solid #1a2035;
-                         border-bottom:1px solid #1e293b">
-                Sorting KEY
-              </th>
-              <th colspan="10"
-                  style="text-align:center; font-weight:700; font-size:10px; letter-spacing:.1em;
-                         padding:6px 8px; position:sticky; top:0; z-index:10;
-                         background:#1f1040; color:#c4b5fd; border-bottom:1px solid #1e293b">
-                Validation Status
+              <th v-for="sec in RAW_SECTIONS" :key="sec.label"
+                  :colspan="sec.count"
+                  :style="{
+                    textAlign: 'center', fontWeight: '700', fontSize: '10px',
+                    letterSpacing: '.1em', padding: '6px 8px',
+                    position: 'sticky', top: '0', zIndex: 10,
+                    background: sec.bg, color: sec.color,
+                    borderRight: '1px solid #1a2035', borderBottom: '1px solid #1e293b'
+                  }">
+                {{ sec.label }}
               </th>
             </tr>
+            <!-- 컬럼 헤더 -->
             <tr>
-              <th v-for="h in RAW_HEADERS" :key="h.key"
-                  style="text-align:center; font-weight:700; font-size:10px; letter-spacing:.08em;
-                         padding:5px 6px; position:sticky; top:30px; z-index:10;
-                         border-right:1px solid #1a2035; border-bottom:2px solid #1e293b"
-                  :style="{ minWidth: h.w+'px', background: h.bg, color: h.fc }">
-                {{ h.label }}
+              <th v-for="col in currentData.rawdataCols" :key="col.colSeq"
+                  :style="rawHeaderThStyle(col)">
+                {{ col.colNm }}
               </th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in currentData.rows" :key="row.rawdataRowSeq">
-              <td v-for="h in RAW_HEADERS" :key="h.key"
-                  style="text-align:center; font-size:11px; padding:5px 6px;
-                         border-right:1px solid #1a2035; border-bottom:1px solid #1a1c24"
-                  :style="rawCellStyle(row[h.key], h)">
-                {{ row[h.key] ?? '' }}
+            <tr v-for="row in currentData.rows" :key="row.rowIdx">
+              <td v-for="col in currentData.rawdataCols" :key="col.colSeq"
+                  :style="rawCellStyle(rawCellValue(row, col), col)">
+                {{ rawCellValue(row, col) }}
               </td>
             </tr>
           </tbody>
@@ -235,11 +223,9 @@ const TABS = [
   { type: 'RAW_DATA', label: 'Raw Data', color: '#f59e0b' },
 ]
 
-// 헤더 행 높이 (sticky top 계산용)
 const ROW1_H = 30
 const ROW2_H = 30
 
-// 컬럼 너비 추정 (Excel 헤더명 길이 기준)
 function guessWidth(colNm) {
   const n = (colNm || '').length
   if (n <= 3)  return 55
@@ -249,28 +235,26 @@ function guessWidth(colNm) {
   return 115
 }
 
-const RAW_HEADERS = [
-  { key: 'company',      label: 'Company',       w: 80,  bg: '#0f1729', fc: '#60a5fa' },
-  { key: 'seg',          label: 'Seg',            w: 60,  bg: '#0f1729', fc: '#60a5fa' },
-  { key: 'chipset',      label: 'Chipset',        w: 100, bg: '#0f1729', fc: '#60a5fa' },
-  { key: 'socCs',        label: 'SoC CS',         w: 110, bg: '#0f1729', fc: '#60a5fa' },
-  { key: 'partNumber',   label: 'Part Number',    w: 140, bg: '#102840', fc: '#93c5fd' },
-  { key: 'dramProcess',  label: 'DRAM Process',   w: 90,  bg: '#102840', fc: '#93c5fd' },
-  { key: 'flashProcess', label: 'Flash Process',  w: 90,  bg: '#102840', fc: '#93c5fd' },
-  { key: 'density',      label: 'Density',        w: 70,  bg: '#102840', fc: '#93c5fd' },
-  { key: 'mlcTlc',       label: 'MLC/TLC',        w: 70,  bg: '#102840', fc: '#93c5fd' },
-  { key: 'pkg',          label: 'PKG',            w: 100, bg: '#102840', fc: '#93c5fd' },
-  { key: 'val1Date',     label: 'Date',           w: 75,  bg: '#1f1040', fc: '#c4b5fd' },
-  { key: 'val1Eng',      label: 'Eng.',           w: 50,  bg: '#1f1040', fc: '#c4b5fd' },
-  { key: 'val1Status',   label: 'Status',         w: 80,  bg: '#1f1040', fc: '#c4b5fd' },
-  { key: 'val1Remark',   label: 'Remark',         w: 120, bg: '#1f1040', fc: '#c4b5fd' },
-  { key: 'val2Date',     label: 'Date',           w: 75,  bg: '#1f1040', fc: '#c4b5fd' },
-  { key: 'val2Eng',      label: 'Eng.',           w: 50,  bg: '#1f1040', fc: '#c4b5fd' },
-  { key: 'val2Status',   label: 'Status',         w: 80,  bg: '#1f1040', fc: '#c4b5fd' },
-  { key: 'val2Remark',   label: 'Remark',         w: 120, bg: '#1f1040', fc: '#c4b5fd' },
-  { key: 'val3Date',     label: 'Date',           w: 75,  bg: '#1f1040', fc: '#c4b5fd' },
-  { key: 'val3Eng',      label: 'Eng.',           w: 50,  bg: '#1f1040', fc: '#c4b5fd' },
-]
+function rawColWidth(colNm) {
+  const n = (colNm || '').length
+  if (n <= 3)  return 60
+  if (n <= 5)  return 70
+  if (n <= 8)  return 90
+  if (n <= 12) return 110
+  return 140
+}
+
+// colIdx 범위로 섹션 구분 (Excel 고정 레이아웃)
+function rawColBg(colIdx) {
+  if (colIdx <= 4)  return '#0d1f38'
+  if (colIdx <= 10) return '#102840'
+  return '#1f1040'
+}
+function rawColFc(colIdx) {
+  if (colIdx <= 4)  return '#60a5fa'
+  if (colIdx <= 10) return '#93c5fd'
+  return '#c4b5fd'
+}
 
 const VENDOR_COLORS = [
   { bg: '#0d1f38', text: '#93c5fd', border: '#1e3a5f' },
@@ -299,16 +283,29 @@ const currentData = computed(() => tabData.value[activeTab.value])
 const history     = computed(() => tabHistory.value[activeTab.value])
 const activeColor = computed(() => TABS.find(t => t.type === activeTab.value)?.color ?? '#3b82f6')
 
-// SPEC_COLS: DB에서 받은 specCols를 UI 렌더링용으로 변환 (하드코딩 제거)
-// 서버 응답 구조: { colIdx: 1-based, colNm: "DIMM" | "Product (Ver.)" | ... }
+// specCols → UI 렌더링용 (colSeq 포함, 셀 조회에 사용)
 const SPEC_COLS = computed(() => {
   const sc = currentData.value?.specCols
   if (!sc?.length) return []
   return sc.map(s => ({
-    key:   'col' + s.colIdx,   // row.col1, row.col2, ...
-    label: s.colNm,
-    w:     guessWidth(s.colNm),
+    colSeq: s.colSeq,
+    label:  s.colNm,
+    w:      guessWidth(s.colNm),
   }))
+})
+
+// rawdataCols 기반 섹션 그룹 (Target AP / Sorting KEY / Validation Status)
+const RAW_SECTIONS = computed(() => {
+  const cols = currentData.value?.rawdataCols ?? []
+  if (!cols.length) return []
+  const targetAp  = cols.filter(c => c.colIdx >= 1 && c.colIdx <= 4)
+  const sortingKey = cols.filter(c => c.colIdx >= 5 && c.colIdx <= 10)
+  const valStatus  = cols.filter(c => c.colIdx >= 11)
+  const sections = []
+  if (targetAp.length)  sections.push({ label: 'Target AP',          count: targetAp.length,  color: '#93c5fd', bg: '#0d1f38' })
+  if (sortingKey.length) sections.push({ label: 'Sorting KEY',        count: sortingKey.length, color: '#93c5fd', bg: '#102840' })
+  if (valStatus.length)  sections.push({ label: 'Validation Status',  count: valStatus.length,  color: '#c4b5fd', bg: '#1f1040' })
+  return sections
 })
 
 // 고정 컬럼의 누적 left 오프셋
@@ -428,6 +425,20 @@ async function onHistorySelect(e) {
 // ── 초기 로드 ──
 Promise.all([loadData(), loadHistory()])
 
+// ── 셀 값 헬퍼 ──
+
+function specCellValue(row, spec) {
+  return row.specCells?.find(c => c.colSeq === spec.colSeq)?.cellValue ?? ''
+}
+
+function chipCellValue(row, col) {
+  return row.chipCells?.find(c => c.colSeq === col.colSeq)?.cellValue ?? ''
+}
+
+function rawCellValue(row, col) {
+  return row.cells?.find(c => c.colSeq === col.colSeq)?.cellValue ?? ''
+}
+
 // ── 스타일 헬퍼 ──
 
 function vendorColor(vi) {
@@ -440,9 +451,8 @@ function colsByVendor(vendor) {
   return currentData.value?.chipCols.filter(c => c.vendor === vendor) ?? []
 }
 
-// 고정 컬럼 <th> 스타일 (헤더 행)
 function frozenThStyle(i, topPx, blank) {
-  const spec  = SPEC_COLS.value[i]
+  const spec   = SPEC_COLS.value[i]
   const isLast = i === SPEC_COLS.value.length - 1
   return {
     position:    'sticky',
@@ -464,7 +474,6 @@ function frozenThStyle(i, topPx, blank) {
   }
 }
 
-// 고정 컬럼 <td> 스타일 (데이터 행)
 function frozenTdStyle(i, hovered) {
   const spec   = SPEC_COLS.value[i]
   const isLast = i === SPEC_COLS.value.length - 1
@@ -485,7 +494,6 @@ function frozenTdStyle(i, hovered) {
   }
 }
 
-// 벤더 그룹 헤더 <th>
 function vendorThStyle(vi, topPx) {
   const c = vendorColor(vi)
   return {
@@ -505,7 +513,6 @@ function vendorThStyle(vi, topPx) {
   }
 }
 
-// 칩 이름 헤더 <th>
 function chipThStyle(col, topPx) {
   const c = vendorColor(vendorIdx(col.vendor))
   return {
@@ -524,7 +531,6 @@ function chipThStyle(col, topPx) {
   }
 }
 
-// 출시일 헤더 <th>
 function chipDateThStyle(col, topPx) {
   const c = vendorColor(vendorIdx(col.vendor))
   return {
@@ -544,15 +550,9 @@ function chipDateThStyle(col, topPx) {
   }
 }
 
-// 칩 셀 값 조회
-function cellValue(row, col) {
-  return row.cells?.find(c => c.colSeq === col.colSeq)?.cellValue ?? ''
-}
-
-// 칩 데이터 셀 스타일
 function chipCellStyle(row, col, hovered) {
-  const val  = cellValue(row, col)
-  const cell = row.cells?.find(c => c.colSeq === col.colSeq)
+  const val  = chipCellValue(row, col)
+  const cell = row.chipCells?.find(c => c.colSeq === col.colSeq)
   const vc   = vendorColor(vendorIdx(col.vendor))
   const base = {
     textAlign:   'center',
@@ -572,15 +572,41 @@ function chipCellStyle(row, col, hovered) {
   return { ...base, background: hovered ? '#182040' : 'transparent', color: vc.text }
 }
 
-// Raw Data 셀 스타일
-function rawCellStyle(val, h) {
-  const base = { background: '#0d1220', color: '#e2e8f0', minWidth: h.w + 'px' }
+function rawHeaderThStyle(col) {
+  return {
+    textAlign:    'center',
+    fontWeight:   '700',
+    fontSize:     '10px',
+    letterSpacing:'.08em',
+    padding:      '5px 6px',
+    position:     'sticky',
+    top:          '30px',
+    zIndex:       10,
+    minWidth:     rawColWidth(col.colNm) + 'px',
+    background:   rawColBg(col.colIdx),
+    color:        rawColFc(col.colIdx),
+    borderRight:  '1px solid #1a2035',
+    borderBottom: '2px solid #1e293b',
+  }
+}
+
+function rawCellStyle(val, col) {
+  const base = {
+    textAlign:    'center',
+    fontSize:     '11px',
+    padding:      '5px 6px',
+    borderRight:  '1px solid #1a2035',
+    borderBottom: '1px solid #1a1c24',
+    background:   '#0d1220',
+    color:        '#e2e8f0',
+    minWidth:     rawColWidth(col.colNm) + 'px',
+  }
   if (!val) return base
   const v = String(val).toLowerCase()
-  if (v === 'pass')           return { ...base, background: '#00B050', color: '#fff' }
-  if (v === 'fail')           return { ...base, background: '#c0392b', color: '#fff' }
-  if (v === 'in progress')    return { ...base, background: '#FF6600', color: '#fff' }
-  if (v.startsWith('check'))  return { ...base, background: '#FF0000', color: '#fff' }
+  if (v === 'pass')            return { ...base, background: '#00B050', color: '#fff' }
+  if (v === 'fail')            return { ...base, background: '#c0392b', color: '#fff' }
+  if (v === 'in progress')     return { ...base, background: '#FF6600', color: '#fff' }
+  if (v.startsWith('check'))   return { ...base, background: '#FF0000', color: '#fff' }
   return base
 }
 

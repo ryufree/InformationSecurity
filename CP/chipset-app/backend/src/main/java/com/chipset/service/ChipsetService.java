@@ -6,6 +6,7 @@ import com.chipset.util.ChipsetExcelParser;
 import com.chipset.util.ChipsetExcelParser.CellColDef;
 import com.chipset.util.ChipsetExcelParser.FileType;
 import com.chipset.util.ChipsetExcelParser.ParseResult;
+import com.chipset.util.ChipsetExcelParser.RawDataColDef;
 import com.chipset.util.ChipsetExcelParser.RawDataRowData;
 import com.chipset.util.ChipsetExcelParser.RowData;
 import com.chipset.util.ChipsetExcelParser.SpecColDef;
@@ -64,10 +65,9 @@ public class ChipsetService {
         if (parsed.rows.isEmpty())
             return UploadResult.error("데이터 행이 없습니다.");
 
-        // 타입별 메인 테이블 삭제 (FK 의존 순서: CELL → ROW → CELL_COL → SPEC_COL → UPLOAD)
+        // FK 의존 순서: CELL → CHIP_COL → SPEC_COL → UPLOAD
         chipsetMapper.deleteCellsByFileType(fileType);
-        chipsetMapper.deleteRowsByFileType(fileType);
-        chipsetMapper.deleteCellColsByFileType(fileType);
+        chipsetMapper.deleteChipColsByFileType(fileType);
         chipsetMapper.deleteSpecColsByFileType(fileType);
         chipsetMapper.deleteUploadsByFileType(fileType);
 
@@ -79,99 +79,156 @@ public class ChipsetService {
         chipsetMapper.insertUpload(upload);
         Long uploadSeq = upload.getUploadSeq();
 
-        // 스펙 컬럼 메타 INSERT (좌측 고정 컬럼 헤더명)
+        // 스펙 컬럼 헤더 INSERT
         List<ChipsetSpecCol> specCols = new ArrayList<>();
+        Map<Integer, Long> specColIdxToSeq = new HashMap<>();
         for (SpecColDef scd : parsed.specColDefs) {
             ChipsetSpecCol specCol = new ChipsetSpecCol();
             specCol.setUploadSeq(uploadSeq);
             specCol.setColIdx(scd.colIdx);
-            specCol.setColNm(truncate(scd.colNm, 200));
+            specCol.setColNm(truncate(scd.colNm, 100));
             specCol.setSortOrder(scd.sortOrder);
             chipsetMapper.insertSpecCol(specCol);
+            specColIdxToSeq.put(scd.colIdx, specCol.getColSeq());
             specCols.add(specCol);
         }
 
-        // 셀 컬럼 INSERT (벤더/칩셋)
-        Map<Integer, Long> colIdxToSeq = new HashMap<>();
-        List<ChipsetCellCol> cellCols  = new ArrayList<>();
-
+        // 칩셋 컬럼 헤더 INSERT
+        Map<Integer, Long> chipColIdxToSeq = new HashMap<>();
+        List<ChipsetChipCol> chipCols = new ArrayList<>();
         for (CellColDef def : parsed.cellColDefs) {
-            ChipsetCellCol col = new ChipsetCellCol();
+            ChipsetChipCol col = new ChipsetChipCol();
             col.setUploadSeq(uploadSeq);
             col.setVendor(def.vendor);
             col.setColIdx(def.colIdx);
             col.setChipNm(truncate(def.chipNm, 200));
             col.setChipDt(truncate(def.chipDt, 50));
             col.setSortOrder(def.sortOrder);
-            chipsetMapper.insertCellCol(col);
-            colIdxToSeq.put(def.colIdx, col.getColSeq());
-            cellCols.add(col);
+            chipsetMapper.insertChipCol(col);
+            chipColIdxToSeq.put(def.colIdx, col.getColSeq());
+            chipCols.add(col);
         }
 
-        // 행 + 셀 INSERT
-        List<ChipsetRow> rows = new ArrayList<>();
-        for (RowData rd : parsed.rows) {
-            ChipsetRow row = new ChipsetRow();
-            row.setUploadSeq(uploadSeq);
-            // specVals[0..9] → col1..col10
-            String[] v = rd.specVals;
-            row.setCol1(truncate(v.length > 0 ? v[0] : null, 200));
-            row.setCol2(truncate(v.length > 1 ? v[1] : null, 200));
-            row.setCol3(truncate(v.length > 2 ? v[2] : null, 200));
-            row.setCol4(truncate(v.length > 3 ? v[3] : null, 200));
-            row.setCol5(truncate(v.length > 4 ? v[4] : null, 200));
-            row.setCol6(truncate(v.length > 5 ? v[5] : null, 200));
-            row.setCol7(truncate(v.length > 6 ? v[6] : null, 200));
-            row.setCol8(truncate(v.length > 7 ? v[7] : null, 200));
-            row.setCol9(truncate(v.length > 8 ? v[8] : null, 200));
-            row.setCol10(truncate(v.length > 9 ? v[9] : null, 200));
-            row.setSortOrder(rd.sortOrder);
-            chipsetMapper.insertRow(row);
+        // 셀 INSERT: SPEC + CHIP 모두 CHIPSET_CELL에 저장
+        List<ChipsetCell> allCells = new ArrayList<>();
+        for (int rowIdx = 0; rowIdx < parsed.rows.size(); rowIdx++) {
+            RowData rd = parsed.rows.get(rowIdx);
 
-            List<ChipsetCell> cells = new ArrayList<>();
-            for (Map.Entry<Integer, String> entry : rd.cellValues.entrySet()) {
-                Long colSeq = colIdxToSeq.get(entry.getKey());
+            // SPEC 셀: 각 스펙 컬럼값을 COL_TYPE='SPEC'으로 저장
+            for (SpecColDef scd : parsed.specColDefs) {
+                Long colSeq = specColIdxToSeq.get(scd.colIdx);
                 if (colSeq == null) continue;
+                int arrIdx = scd.colIdx - 1;  // 1-based → 0-based
+                String val = (arrIdx < rd.specVals.length) ? rd.specVals[arrIdx] : null;
+
                 ChipsetCell cell = new ChipsetCell();
-                cell.setRowSeq(row.getRowSeq());
+                cell.setUploadSeq(uploadSeq);
+                cell.setRowIdx(rowIdx);
+                cell.setColType("SPEC");
                 cell.setColSeq(colSeq);
-                cell.setUploadSeq(uploadSeq);   // 이제 cell에도 uploadSeq 저장
-                cell.setCellValue(truncate(entry.getValue(), 200));
-                cell.setBgColor(truncate(rd.cellColors.get(entry.getKey()), 20));
+                cell.setCellValue(truncate(val, 200));
                 chipsetMapper.insertCell(cell);
-                cells.add(cell);
+                allCells.add(cell);
             }
-            row.setCells(cells);
-            rows.add(row);
+
+            // CHIP 셀: 각 칩셋 컬럼값을 COL_TYPE='CHIP'으로 저장
+            for (Map.Entry<Integer, String> entry : rd.cellValues.entrySet()) {
+                Long colSeq = chipColIdxToSeq.get(entry.getKey());
+                if (colSeq == null) continue;
+
+                ChipsetCell cell = new ChipsetCell();
+                cell.setUploadSeq(uploadSeq);
+                cell.setRowIdx(rowIdx);
+                cell.setColType("CHIP");
+                cell.setColSeq(colSeq);
+                cell.setCellValue(truncate(entry.getValue(), 200));
+                cell.setBgColor(truncate(rd.cellColors.get(entry.getKey()), 10));
+                chipsetMapper.insertCell(cell);
+                allCells.add(cell);
+            }
         }
 
         // 히스토리 누적
         chipsetMapper.insertUploadH(upload);
         for (ChipsetSpecCol sc  : specCols)  chipsetMapper.insertSpecColH(sc);
-        for (ChipsetCellCol col : cellCols)  chipsetMapper.insertCellColH(col);
-        for (ChipsetRow row : rows) {
-            chipsetMapper.insertRowH(row);
-            for (ChipsetCell cell : row.getCells()) chipsetMapper.insertCellH(cell);
-        }
+        for (ChipsetChipCol col : chipCols)  chipsetMapper.insertChipColH(col);
+        for (ChipsetCell    c   : allCells)  chipsetMapper.insertCellH(c);
 
-        log.info("업로드 완료 type={} seq={} rows={} cellCols={} specCols={}",
+        log.info("Matrix 업로드 완료 type={} seq={} rows={} chipCols={} specCols={}",
                 fileType, uploadSeq, parsed.rows.size(),
                 parsed.cellColDefs.size(), parsed.specColDefs.size());
         return UploadResult.success(uploadSeq, fileType, parsed.rows.size(), parsed.cellColDefs.size());
     }
 
+    private UploadResult uploadRawData(ParseResult parsed, String filename, String fileType) {
+        if (parsed.rawDataRows.isEmpty()) return UploadResult.error("Raw_Data 행이 없습니다.");
+        if (parsed.rawDataColDefs.isEmpty()) return UploadResult.error("Raw_Data 컬럼 헤더를 찾을 수 없습니다.");
+
+        // FK 의존 순서: CELL → RAWDATA_COL → UPLOAD
+        chipsetMapper.deleteCellsByFileType(fileType);
+        chipsetMapper.deleteRawdataColsByFileType(fileType);
+        chipsetMapper.deleteUploadsByFileType(fileType);
+
+        ChipsetUpload upload = new ChipsetUpload();
+        upload.setFileNm(filename);
+        upload.setFileType(fileType);
+        upload.setRowCount(parsed.rawDataRows.size());
+        upload.setColCount(parsed.rawDataColDefs.size());
+        chipsetMapper.insertUpload(upload);
+        Long uploadSeq = upload.getUploadSeq();
+
+        // RawData 컬럼 헤더 INSERT
+        List<ChipsetRawdataCol> rawdataCols = new ArrayList<>();
+        Map<Integer, Long> rawColIdxToSeq = new HashMap<>();
+        for (RawDataColDef def : parsed.rawDataColDefs) {
+            ChipsetRawdataCol col = new ChipsetRawdataCol();
+            col.setUploadSeq(uploadSeq);
+            col.setColIdx(def.colIdx);
+            col.setColNm(truncate(def.colNm, 200));
+            col.setSortOrder(def.sortOrder);
+            chipsetMapper.insertRawdataCol(col);
+            rawColIdxToSeq.put(def.colIdx, col.getColSeq());
+            rawdataCols.add(col);
+        }
+
+        // 셀 INSERT: 모든 rawdata 셀을 COL_TYPE='RAWDATA'로 저장
+        List<ChipsetCell> allCells = new ArrayList<>();
+        for (RawDataRowData rd : parsed.rawDataRows) {
+            for (Map.Entry<Integer, String> entry : rd.cellValues.entrySet()) {
+                Long colSeq = rawColIdxToSeq.get(entry.getKey());
+                if (colSeq == null) continue;
+
+                ChipsetCell cell = new ChipsetCell();
+                cell.setUploadSeq(uploadSeq);
+                cell.setRowIdx(rd.rowIdx);
+                cell.setColType("RAWDATA");
+                cell.setColSeq(colSeq);
+                cell.setCellValue(truncate(entry.getValue(), 200));
+                chipsetMapper.insertCell(cell);
+                allCells.add(cell);
+            }
+        }
+
+        // 히스토리 누적
+        chipsetMapper.insertUploadH(upload);
+        for (ChipsetRawdataCol col : rawdataCols) chipsetMapper.insertRawdataColH(col);
+        for (ChipsetCell       c   : allCells)   chipsetMapper.insertCellH(c);
+
+        log.info("Raw_Data 업로드 완료 seq={} rows={} cols={}",
+                uploadSeq, parsed.rawDataRows.size(), parsed.rawDataColDefs.size());
+        return UploadResult.success(uploadSeq, fileType, parsed.rawDataRows.size(), parsed.rawDataColDefs.size());
+    }
+
     /**
-     * Oracle 사용 시 schema.sql 을 앱에서 자동 실행하지 않도록 되어 있어(spring.sql.init.mode=never),
-     * DB 스키마가 구버전인 상태로 업로드를 시도하면 ORA-00904/ORA-00942 같은 예외로 500이 발생한다.
-     * 업로드 초반에 "컬럼/테이블 존재 여부"를 빠르게 검증해서, 원인/해결 방법을 명확하게 안내한다.
+     * DB 스키마가 v1.2 기준인지 검증한다.
+     * 구버전 스키마에서 업로드 시 ORA-00904/ORA-00942 대신 명확한 오류 메시지를 반환하기 위함.
      */
     private void assertMatrixSchemaReady() {
-        // "WHERE 1=0" 로 실제 데이터 스캔 없이 컬럼/테이블 존재만 검증
-        assertSqlCompiles("SELECT COL10 FROM CHIPSET_ROW WHERE 1=0", "CHIPSET_ROW.COL10");
-        assertSqlCompiles("SELECT COL10 FROM CHIPSET_ROW_H WHERE 1=0", "CHIPSET_ROW_H.COL10");
-        assertSqlCompiles("SELECT 1 FROM CHIPSET_SPEC_COL WHERE 1=0", "CHIPSET_SPEC_COL");
-        assertSqlCompiles("SELECT 1 FROM CHIPSET_CELL_COL WHERE 1=0", "CHIPSET_CELL_COL");
-        assertSqlCompiles("SELECT 1 FROM CHIPSET_CELL WHERE 1=0", "CHIPSET_CELL");
+        assertSqlCompiles("SELECT COL_TYPE FROM CHIPSET_CELL WHERE 1=0",     "CHIPSET_CELL.COL_TYPE");
+        assertSqlCompiles("SELECT ROW_IDX  FROM CHIPSET_CELL WHERE 1=0",     "CHIPSET_CELL.ROW_IDX");
+        assertSqlCompiles("SELECT 1 FROM CHIPSET_SPEC_COL    WHERE 1=0",     "CHIPSET_SPEC_COL");
+        assertSqlCompiles("SELECT 1 FROM CHIPSET_CHIP_COL    WHERE 1=0",     "CHIPSET_CHIP_COL");
+        assertSqlCompiles("SELECT 1 FROM CHIPSET_RAWDATA_COL WHERE 1=0",     "CHIPSET_RAWDATA_COL");
     }
 
     private void assertSqlCompiles(String sql, String requiredObject) {
@@ -185,93 +242,57 @@ public class ChipsetService {
         }
     }
 
-    private UploadResult uploadRawData(ParseResult parsed, String filename, String fileType) {
-        if (parsed.rawDataRows.isEmpty()) return UploadResult.error("Raw_Data 행이 없습니다.");
-
-        chipsetMapper.deleteRawDataRowsByFileType(fileType);
-        chipsetMapper.deleteUploadsByFileType(fileType);
-
-        ChipsetUpload upload = new ChipsetUpload();
-        upload.setFileNm(filename);
-        upload.setFileType(fileType);
-        upload.setRowCount(parsed.rawDataRows.size());
-        upload.setColCount(0);
-        chipsetMapper.insertUpload(upload);
-        Long uploadSeq = upload.getUploadSeq();
-
-        List<RawDataRow> rows = new ArrayList<>();
-        for (RawDataRowData rd : parsed.rawDataRows) {
-            RawDataRow row = new RawDataRow();
-            row.setUploadSeq(uploadSeq);
-            row.setCompany(rd.company);
-            row.setSeg(rd.seg);
-            row.setChipset(rd.chipset);
-            row.setSocCs(rd.socCs);
-            row.setPartNumber(rd.partNumber);
-            row.setDramProcess(rd.dramProcess);
-            row.setFlashProcess(rd.flashProcess);
-            row.setDensity(rd.density);
-            row.setMlcTlc(rd.mlcTlc);
-            row.setPkg(rd.pkg);
-            row.setVal1Date(rd.val1Date);
-            row.setVal1Eng(rd.val1Eng);
-            row.setVal1Status(rd.val1Status);
-            row.setVal1Remark(rd.val1Remark);
-            row.setVal2Date(rd.val2Date);
-            row.setVal2Eng(rd.val2Eng);
-            row.setVal2Status(rd.val2Status);
-            row.setVal2Remark(rd.val2Remark);
-            row.setVal3Date(rd.val3Date);
-            row.setVal3Eng(rd.val3Eng);
-            row.setSortOrder(rd.sortOrder);
-            chipsetMapper.insertRawDataRow(row);
-            rows.add(row);
-        }
-
-        chipsetMapper.insertUploadH(upload);
-        for (RawDataRow row : rows) chipsetMapper.insertRawDataRowH(row);
-
-        log.info("Raw_Data 업로드 완료 seq={} rows={}", uploadSeq, rows.size());
-        return UploadResult.success(uploadSeq, fileType, rows.size(), 0);
-    }
-
     // ── 매트릭스 조회 ─────────────────────────────────────────────
 
     public MatrixResponse getMatrix(String fileType) {
-        ChipsetUpload        latest   = chipsetMapper.selectLatestUploadByType(fileType);
-        List<ChipsetCellCol> cellCols = chipsetMapper.selectCellColsByType(fileType);
-        List<ChipsetSpecCol> specCols = chipsetMapper.selectSpecColsByType(fileType);
-        List<ChipsetRow>     rows     = chipsetMapper.selectRowsByType(fileType);
-
-        List<String> vendors = cellCols.stream()
-                .map(ChipsetCellCol::getVendor).distinct().collect(Collectors.toList());
+        ChipsetUpload latest = chipsetMapper.selectLatestUploadByType(fileType);
 
         MatrixResponse resp = new MatrixResponse();
-        if (latest != null) {
-            resp.setUploadSeq(latest.getUploadSeq());
-            resp.setUploadDt(latest.getUploadDt());
-        }
         resp.setFileType(fileType);
+        resp.setVendors(Collections.emptyList());
+        resp.setChipCols(Collections.emptyList());
+        resp.setSpecCols(Collections.emptyList());
+        resp.setRows(Collections.emptyList());
+
+        if (latest == null) return resp;
+
+        resp.setUploadSeq(latest.getUploadSeq());
+        resp.setUploadDt(latest.getUploadDt());
+
+        List<ChipsetChipCol> chipCols = chipsetMapper.selectChipColsByType(fileType);
+        List<ChipsetSpecCol> specCols = chipsetMapper.selectSpecColsByType(fileType);
+        List<ChipsetCell>    allCells = chipsetMapper.selectCellsByUploadSeq(latest.getUploadSeq());
+
+        List<String> vendors = chipCols.stream()
+                .map(ChipsetChipCol::getVendor).distinct().collect(Collectors.toList());
+
         resp.setVendors(vendors);
-        resp.setChipCols(cellCols);
+        resp.setChipCols(chipCols);
         resp.setSpecCols(specCols);
-        resp.setRows(rows);
+        resp.setRows(buildMatrixRows(allCells));
         return resp;
     }
 
     // ── Raw_Data 조회 ─────────────────────────────────────────────
 
     public RawDataResponse getRawData() {
-        ChipsetUpload   latest = chipsetMapper.selectLatestUploadByType("RAW_DATA");
-        List<RawDataRow> rows  = chipsetMapper.selectRawDataRowsByType("RAW_DATA");
+        ChipsetUpload latest = chipsetMapper.selectLatestUploadByType("RAW_DATA");
 
         RawDataResponse resp = new RawDataResponse();
-        if (latest != null) {
-            resp.setUploadSeq(latest.getUploadSeq());
-            resp.setUploadDt(latest.getUploadDt());
-        }
         resp.setFileType("RAW_DATA");
-        resp.setRows(rows);
+        resp.setRawdataCols(Collections.emptyList());
+        resp.setRows(Collections.emptyList());
+
+        if (latest == null) return resp;
+
+        resp.setUploadSeq(latest.getUploadSeq());
+        resp.setUploadDt(latest.getUploadDt());
+
+        List<ChipsetRawdataCol> rawdataCols = chipsetMapper.selectRawdataColsByType("RAW_DATA");
+        List<ChipsetCell>       allCells    = chipsetMapper.selectCellsByUploadSeq(latest.getUploadSeq());
+
+        resp.setRawdataCols(rawdataCols);
+        resp.setRows(buildRawDataRows(allCells));
         return resp;
     }
 
@@ -284,28 +305,74 @@ public class ChipsetService {
     // ── 특정 히스토리 버전 조회 ───────────────────────────────────
 
     public MatrixResponse getHistoryMatrix(Long uploadSeq) {
-        List<ChipsetCellCol> cellCols = chipsetMapper.selectCellColsH(uploadSeq);
+        List<ChipsetChipCol> chipCols = chipsetMapper.selectChipColsH(uploadSeq);
         List<ChipsetSpecCol> specCols = chipsetMapper.selectSpecColsH(uploadSeq);
-        List<ChipsetRow>     rows     = chipsetMapper.selectRowsH(uploadSeq);
+        List<ChipsetCell>    allCells = chipsetMapper.selectCellsHByUploadSeq(uploadSeq);
 
-        List<String> vendors = cellCols.stream()
-                .map(ChipsetCellCol::getVendor).distinct().collect(Collectors.toList());
+        List<String> vendors = chipCols.stream()
+                .map(ChipsetChipCol::getVendor).distinct().collect(Collectors.toList());
 
         MatrixResponse resp = new MatrixResponse();
         resp.setUploadSeq(uploadSeq);
         resp.setVendors(vendors);
-        resp.setChipCols(cellCols);
+        resp.setChipCols(chipCols);
         resp.setSpecCols(specCols);
-        resp.setRows(rows);
+        resp.setRows(buildMatrixRows(allCells));
         return resp;
     }
 
     public RawDataResponse getHistoryRawData(Long uploadSeq) {
+        List<ChipsetRawdataCol> rawdataCols = chipsetMapper.selectRawdataColsH(uploadSeq);
+        List<ChipsetCell>       allCells    = chipsetMapper.selectCellsHByUploadSeq(uploadSeq);
+
         RawDataResponse resp = new RawDataResponse();
         resp.setUploadSeq(uploadSeq);
         resp.setFileType("RAW_DATA");
-        resp.setRows(chipsetMapper.selectRawDataRowsH(uploadSeq));
+        resp.setRawdataCols(rawdataCols);
+        resp.setRows(buildRawDataRows(allCells));
         return resp;
+    }
+
+    // ── 행 재구성 헬퍼 ───────────────────────────────────────────
+
+    private List<MatrixRow> buildMatrixRows(List<ChipsetCell> allCells) {
+        Map<Integer, List<ChipsetCell>> byRow = allCells.stream()
+                .collect(Collectors.groupingBy(ChipsetCell::getRowIdx));
+
+        List<Integer> sortedIdxes = new ArrayList<>(byRow.keySet());
+        Collections.sort(sortedIdxes);
+
+        List<MatrixRow> rows = new ArrayList<>();
+        for (Integer rowIdx : sortedIdxes) {
+            List<ChipsetCell> rowCells = byRow.get(rowIdx);
+            MatrixRow mr = new MatrixRow();
+            mr.setRowIdx(rowIdx);
+            mr.setSpecCells(rowCells.stream()
+                    .filter(c -> "SPEC".equals(c.getColType()))
+                    .collect(Collectors.toList()));
+            mr.setChipCells(rowCells.stream()
+                    .filter(c -> "CHIP".equals(c.getColType()))
+                    .collect(Collectors.toList()));
+            rows.add(mr);
+        }
+        return rows;
+    }
+
+    private List<RawDataRow> buildRawDataRows(List<ChipsetCell> allCells) {
+        Map<Integer, List<ChipsetCell>> byRow = allCells.stream()
+                .collect(Collectors.groupingBy(ChipsetCell::getRowIdx));
+
+        List<Integer> sortedIdxes = new ArrayList<>(byRow.keySet());
+        Collections.sort(sortedIdxes);
+
+        List<RawDataRow> rows = new ArrayList<>();
+        for (Integer rowIdx : sortedIdxes) {
+            RawDataRow row = new RawDataRow();
+            row.setRowIdx(rowIdx);
+            row.setCells(byRow.get(rowIdx));
+            rows.add(row);
+        }
+        return rows;
     }
 
     // ── 내부 유틸 ─────────────────────────────────────────────────
