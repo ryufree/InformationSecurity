@@ -1,0 +1,45 @@
+"RAWDATA_COL_H_SEQ","COL_SEQ","UPLOAD_SEQ","COL_IDX","COL_NM","SORT_ORDER"
+1,1,4,1,Company,0
+2,2,4,2,Seg,1
+3,3,4,3,Chipset,2
+4,4,4,4,SoC CS,3
+5,5,4,5,Part Number,4
+6,6,4,6,"DRAM
+PROCES",5
+7,7,4,7,"Flash
+Process",6
+8,8,4,8,Density,7
+9,9,4,9,MLC/TLC,8
+10,10,4,10,PKG,9
+11,11,4,11,Date,10
+12,12,4,12,Eng.,11
+13,13,4,13,Status,12
+14,14,4,14,Remark,13
+15,15,4,15,Date,14
+16,16,4,16,Eng.,15
+17,17,4,17,Status,16
+18,18,4,18,Remark,17
+19,19,4,19,Date,18
+20,20,4,20,Eng.,19
+21,21,5,1,Company,0
+22,22,5,2,Seg,1
+23,23,5,3,Chipset,2
+24,24,5,4,SoC CS,3
+25,25,5,5,Part Number,4
+26,26,5,6,"DRAM
+PROCES",5
+27,27,5,7,"Flash
+Process",6
+28,28,5,8,Density,7
+29,29,5,9,MLC/TLC,8
+30,30,5,10,PKG,9
+31,31,5,11,Date,10
+32,32,5,12,Eng.,11
+33,33,5,13,Status,12
+34,34,5,14,Remark,13
+35,35,5,15,Date,14
+36,36,5,16,Eng.,15
+37,37,5,17,Status,16
+38,38,5,18,Remark,17
+39,39,5,19,Date,18
+40,40,5,20,Eng.,19

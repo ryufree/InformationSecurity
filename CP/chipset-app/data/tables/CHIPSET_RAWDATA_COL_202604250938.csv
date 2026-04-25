@@ -1,0 +1,23 @@
+"COL_SEQ","UPLOAD_SEQ","COL_IDX","COL_NM","SORT_ORDER"
+21,5,1,Company,0
+22,5,2,Seg,1
+23,5,3,Chipset,2
+24,5,4,SoC CS,3
+25,5,5,Part Number,4
+26,5,6,"DRAM
+PROCES",5
+27,5,7,"Flash
+Process",6
+28,5,8,Density,7
+29,5,9,MLC/TLC,8
+30,5,10,PKG,9
+31,5,11,Date,10
+32,5,12,Eng.,11
+33,5,13,Status,12
+34,5,14,Remark,13
+35,5,15,Date,14
+36,5,16,Eng.,15
+37,5,17,Status,16
+38,5,18,Remark,17
+39,5,19,Date,18
+40,5,20,Eng.,19
