@@ -276,20 +276,36 @@ public class ChipsetExcelParser {
     // Row 0: 섹션 그룹 헤더 (Target AP / Sorting KEY / Validation Status)
     // Row 1: 컬럼 헤더 (Company, Seg, Chipset, ...)
     // Row 2+: 데이터
+    //
+    // Validation Status처럼 하위 컬럼이 없는 섹션은 Row 1이 비어 있으므로
+    // Row 1이 비었을 경우 Row 0 섹션 헤더를 컬럼명 fallback으로 사용한다.
 
     private static void parseRawData(Sheet sheet, DataFormatter fmt, ParseResult result) {
-        int headerRowIdx = 1;
-        int dataStartIdx = 2;
+        int sectionRowIdx = 0;
+        int headerRowIdx  = 1;
+        int dataStartIdx  = 2;
+
+        Row sectionRow = sheet.getRow(sectionRowIdx);
+        Row headerRow  = sheet.getRow(headerRowIdx);
 
         // 컬럼 헤더 읽기
-        Row headerRow = sheet.getRow(headerRowIdx);
-        if (headerRow != null) {
+        if (headerRow != null || sectionRow != null) {
             int sortOrder = 0;
-            int lastCol = headerRow.getLastCellNum();
+            int lastCol = 0;
+            if (headerRow  != null) lastCol = Math.max(lastCol, headerRow.getLastCellNum());
+            if (sectionRow != null) lastCol = Math.max(lastCol, sectionRow.getLastCellNum());
+
             for (int c = 1; c < lastCol; c++) {
-                Cell cell = headerRow.getCell(c);
-                if (cell == null) continue;
-                String nm = fmt.formatCellValue(cell).trim();
+                // Row 1 우선, 비어 있으면 Row 0 섹션 헤더로 fallback
+                String nm = "";
+                if (headerRow != null) {
+                    Cell cell = headerRow.getCell(c);
+                    if (cell != null) nm = fmt.formatCellValue(cell).trim();
+                }
+                if (nm.isEmpty() && sectionRow != null) {
+                    Cell cell = sectionRow.getCell(c);
+                    if (cell != null) nm = fmt.formatCellValue(cell).trim();
+                }
                 if (nm.isEmpty()) continue;
                 RawDataColDef def = new RawDataColDef();
                 def.colIdx    = c;
