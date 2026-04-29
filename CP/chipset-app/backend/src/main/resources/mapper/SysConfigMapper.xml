@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.chipset.example.mapper.SysConfigMapper">
+
+    <resultMap id="SysConfigMap" type="com.chipset.example.model.SysConfig">
+        <id     column="CONFIG_ID"   property="configId"/>
+        <result column="PROFILE"     property="profile"/>
+        <result column="PROP_KEY"    property="propKey"/>
+        <result column="PROP_VALUE"  property="propValue"/>
+        <result column="DATA_TYPE"   property="dataType"/>
+        <result column="EDITABLE_YN" property="editableYn"/>
+        <result column="RESTART_YN"  property="restartYn"/>
+        <result column="DESCRIPTION" property="description"/>
+        <result column="USE_YN"      property="useYn"/>
+    </resultMap>
+
+    <!-- 프로파일 + 키 단건 조회 -->
+    <select id="selectByProfileAndKey" resultMap="SysConfigMap">
+        SELECT CONFIG_ID, PROFILE, PROP_KEY, PROP_VALUE,
+               DATA_TYPE, EDITABLE_YN, RESTART_YN, DESCRIPTION, USE_YN
+        FROM   SYS_CONFIG
+        WHERE  PROFILE  = #{profile}
+        AND    PROP_KEY = #{propKey}
+        AND    USE_YN   = 'Y'
+    </select>
+
+    <!--
+        프로파일 조회: common 포함, profile-specific 값이 common보다 우선
+        ORDER BY PROFILE : common 먼저, 특정 프로파일 나중에 → Service에서 override 처리
+    -->
+    <select id="selectByProfile" resultMap="SysConfigMap">
+        SELECT CONFIG_ID, PROFILE, PROP_KEY, PROP_VALUE,
+               DATA_TYPE, EDITABLE_YN, RESTART_YN, DESCRIPTION, USE_YN
+        FROM   SYS_CONFIG
+        WHERE  PROFILE IN ('common', #{profile})
+        AND    USE_YN  = 'Y'
+        ORDER  BY CASE PROFILE WHEN 'common' THEN 0 ELSE 1 END,
+                  PROP_KEY
+    </select>
+
+    <!-- 런타임 변경 가능 설정만 조회 -->
+    <select id="selectEditableByProfile" resultMap="SysConfigMap">
+        SELECT CONFIG_ID, PROFILE, PROP_KEY, PROP_VALUE,
+               DATA_TYPE, EDITABLE_YN, RESTART_YN, DESCRIPTION, USE_YN
+        FROM   SYS_CONFIG
+        WHERE  PROFILE     IN ('common', #{profile})
+        AND    EDITABLE_YN = 'Y'
+        AND    USE_YN      = 'Y'
+        ORDER  BY PROP_KEY
+    </select>
+
+    <!-- 전체 조회 -->
+    <select id="selectAll" resultMap="SysConfigMap">
+        SELECT CONFIG_ID, PROFILE, PROP_KEY, PROP_VALUE,
+               DATA_TYPE, EDITABLE_YN, RESTART_YN, DESCRIPTION, USE_YN
+        FROM   SYS_CONFIG
+        WHERE  USE_YN = 'Y'
+        ORDER  BY PROFILE, PROP_KEY
+    </select>
+
+    <!-- 런타임 값 업데이트 -->
+    <update id="updateValue">
+        UPDATE SYS_CONFIG
+        SET    PROP_VALUE = #{propValue},
+               MOD_DT    = CURRENT_TIMESTAMP
+        WHERE  PROFILE  = #{profile}
+        AND    PROP_KEY = #{propKey}
+        AND    EDITABLE_YN = 'Y'
+    </update>
+
+</mapper>
