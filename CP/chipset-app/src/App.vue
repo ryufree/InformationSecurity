@@ -3,6 +3,7 @@ import { shallowRef } from 'vue'
 import HomeScreen from './components/HomeScreen.vue'
 import ChipsetValidation from './components/ChipsetValidation.vue'
 import ChipsetUploadView from './components/ChipsetUploadView.vue'
+import ChipsetUploadViewV2 from './components/ChipsetUploadViewV2.vue'
 const NAV_HEIGHT = 44
 
 const apps = [
@@ -15,8 +16,14 @@ const apps = [
   {
     id: 'chipset-db',
     name: 'ChipsetUploadView.vue',
-    description: 'Upload → Oracle/H2 DB → Grid 출력',
+    description: 'Upload → Oracle/H2 DB → Grid 출력  ·  Vue 3 Composition API',
     component: ChipsetUploadView,
+  },
+  {
+    id: 'chipset-db-v2',
+    name: 'ChipsetUploadViewV2.vue',
+    description: 'Upload → Oracle/H2 DB → Grid 출력  ·  Vue 2 Options API',
+    component: ChipsetUploadViewV2,
   },
 ]
 
