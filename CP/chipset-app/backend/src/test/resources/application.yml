@@ -1,0 +1,20 @@
+spring:
+  datasource:
+    driver-class-name: org.h2.Driver
+    url: jdbc:h2:mem:testdb;MODE=Oracle;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema-sys-config.sql   # SYS_CONFIG 테이블만 생성
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+    jdbc-type-for-null: 'NULL'
+
+logging:
+  level:
+    com.chipset: DEBUG

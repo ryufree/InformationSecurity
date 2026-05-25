@@ -14,6 +14,7 @@ import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.Trigger;
 import org.springframework.scheduling.TriggerContext;
 
+import java.time.Clock;
 import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -99,7 +100,9 @@ class JobSchedulerTargetProcessorTest {
         verify(taskScheduler).schedule(any(Runnable.class), triggerCaptor.capture());
 
         // Trigger 꺼내서 직접 nextExecution 호출
+        // getClock() 이 null 이면 CronTrigger 내부에서 NPE → Clock 명시 필요
         TriggerContext mockContext = mock(TriggerContext.class);
+        given(mockContext.getClock()).willReturn(Clock.systemDefaultZone());
         Instant nextTime = triggerCaptor.getValue().nextExecution(mockContext);
 
         // then: 다음 실행 시간이 계산됨 (cron 파싱 성공)

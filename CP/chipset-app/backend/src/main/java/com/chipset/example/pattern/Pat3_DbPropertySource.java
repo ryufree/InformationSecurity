@@ -6,7 +6,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.MapPropertySource;
 
-import javax.annotation.PostConstruct;
+import jakarta.annotation.PostConstruct;
 import java.util.Map;
 
 /**
