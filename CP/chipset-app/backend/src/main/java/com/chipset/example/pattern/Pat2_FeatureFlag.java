@@ -1,5 +1,6 @@
 package com.chipset.example.pattern;
 
+import com.chipset.example.annotation.JobSchedulerTarget;
 import com.chipset.example.service.SysConfigService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -12,22 +13,83 @@ import org.springframework.stereotype.Service;
  *   maru.batch.mh.meeting.reminder.active=true  ← 이전 가능 ★1순위
  *   maru.feature.new-ui-enabled=false
  *
- * [Before]
+ * [현재 문제 — Before]
  *   @JobSchedulerTarget(enabled = "${maru.batch.mh.meeting.reminder.active}")
- *   @Scheduled(cron = "${maru.batch.mh.meeting.reminder.cron}")
- *   public BatchResult meetingEmailReminder() { ... }
- *   → @JobSchedulerTarget의 enabled 값이 컨텍스트 초기화 시 고정됨
+ *   → 처리기가 기동 시 1회 enabled 를 읽어 고정 → DB 변경 후 재시작 필요
  *
- * [After]
- *   메서드 내부에서 boolean 값을 DB에서 읽어 분기.
- *   배치 실행 시마다 최신 활성화 여부를 확인 → DB에서 false로 바꾸면 즉시 중단.
+ * [해결 방법 선택]
+ *   ① Pat2-A : 메서드 내부에서 sysConfigService.getBoolean() 직접 호출  (코드 변경 필요)
+ *   ② Pat2-B : @JobSchedulerTarget 처리기를 @DbValue 구조로 수정         (어노테이션 유지)
+ *              → 어노테이션은 그대로, 처리기만 "실행마다 DB 조회"로 변경
  *
  * [이점]
  *   - 서버 재시작 없이 배치 ON/OFF 가능
  *   - 장애 시 즉시 비활성화 (긴급 kill-switch 역할)
- *   - A/B 테스트, 점진적 기능 출시에 활용
  * =====================================================================
  */
+
+// ══════════════════════════════════════════════════════════════════════
+// Pat2-A : 메서드 내부에서 직접 DB 조회
+// ══════════════════════════════════════════════════════════════════════
+@Service
+class Pat2A_DirectCall {
+
+    @Autowired
+    private SysConfigService sysConfigService;
+
+    // ── Before ────────────────────────────────────────────────────────
+    // @JobSchedulerTarget(enabled = "${maru.batch.mh.meeting.reminder.active}")
+    // @Scheduled(cron = "${maru.batch.mh.meeting.reminder.cron}")
+    // public void meetingEmailReminder_BEFORE() {
+    //     // 기동 시 고정 → DB 변경해도 재시작 전까지 무시됨
+    // }
+
+    // ── After ─────────────────────────────────────────────────────────
+    // @Scheduled(cron = "${maru.batch.mh.meeting.reminder.cron}")
+    public Object meetingEmailReminder() {
+        boolean active = sysConfigService.getBoolean(
+            "maru.batch.mh.meeting.reminder.active", true);  // ★ 실행마다 DB 조회
+
+        if (!active) {
+            return buildResult("SKIPPED", "배치 비활성화 (DB: active=false)");
+        }
+        return runBatch();
+    }
+
+    private Object runBatch()                              { return buildResult("SUCCESS", "완료"); }
+    private Object buildResult(String status, String msg)  { return status + ": " + msg; }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Pat2-B : @JobSchedulerTarget 처리기를 @DbValue 구조로 수정
+//          → 어노테이션 사용법은 Before 와 완전히 동일하게 유지
+// ══════════════════════════════════════════════════════════════════════
+
+/**
+ * [사용 측 코드 — 변경 없음]
+ * 처리기만 바꾸면 아래 어노테이션이 DB 값을 동적으로 반영한다.
+ *
+ *   @JobSchedulerTarget(enabled = "${maru.batch.mh.meeting.reminder.active}")
+ *   @Scheduled(cron = "${maru.batch.mh.meeting.reminder.cron}")
+ *   public void meetingEmailReminder() { ... }
+ */
+@Service
+class Pat2B_AnnotationStyle {
+
+    // 처리기(Pat2B_Processor)가 이 어노테이션을 감지하여 DB 연동을 대신 처리.
+    // 메서드 내부에 sysConfigService 호출 코드 불필요.
+
+    @JobSchedulerTarget(enabled = "${maru.batch.mh.meeting.reminder.active}",
+                        cron    = "${maru.batch.mh.meeting.reminder.cron}")
+    public void meetingEmailReminder() {
+        // 순수 배치 로직만 작성. active 체크는 처리기가 대신함.
+        System.out.println("미팅 리마인더 이메일 발송");
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// [공통 서비스] — 예제 코드용
+// ══════════════════════════════════════════════════════════════════════
 @Service
 public class Pat2_FeatureFlag {
 
