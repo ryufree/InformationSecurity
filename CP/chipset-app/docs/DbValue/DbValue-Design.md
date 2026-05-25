@@ -304,3 +304,235 @@ private boolean mailActive;
 | DTO | `code/dto/PropertiesResult.java` |
 | Mapper 인터페이스 | `code/mapper/PropertiesMapper.java` |
 | SQL (MyBatis XML) | `code/sql/PropertiesMapper.xml` |
+
+---
+
+## @JobSchedulerTarget — DB 기반 배치 스케줄러 제어
+
+### 개요
+
+`@DbValue`가 **필드**에 DB 값을 주입하는 것처럼,
+`@JobSchedulerTarget`은 **배치 메서드**의 실행 여부(enabled)와 스케줄(cron)을
+DB에서 읽어 제어하는 커스텀 어노테이션 시스템.
+
+```
+@DbValue           → 필드 주입     → 기동 시 DB 조회 후 주입
+@JobSchedulerTarget → 메서드 실행  → 실행마다 DB 조회 (동적 반영)
+```
+
+### 이름 변경이 없는 이유
+
+`@DbValue`는 Spring 내장 `@Value`와 이름이 겹쳐서 충돌을 피하기 위해 이름을 바꿨습니다.
+`@JobSchedulerTarget`은 Spring / Java 표준에 동일한 이름의 어노테이션이 존재하지 않아
+이름 변경 없이 그대로 사용합니다.
+
+| | @Value → @DbValue | @JobSchedulerTarget |
+|---|---|---|
+| 충돌 대상 | Spring `@Value` (`org.springframework.beans.factory.annotation.Value`) | 없음 |
+| 이름 변경 | 필요 | 불필요 |
+
+### @DbValue 와의 차이
+
+| 구분 | @DbValue | @JobSchedulerTarget |
+|------|----------|---------------------|
+| 적용 대상 | 필드 | 메서드 |
+| DB 조회 시점 | 기동 시 1회 | **실행마다** |
+| 서버 재시작 없이 변경 | ❌ (주입 후 고정) | ✅ (실행마다 최신값) |
+| 용도 | 설정값 주입 | 배치 ON/OFF, cron 동적 변경 |
+
+### 사용법
+
+```java
+// 기존 — 기동 시 고정, DB 변경 후 재시작 필요
+@JobSchedulerTarget(enabled = "${maru.batch.mh.meeting.reminder.active}")
+@Scheduled(cron = "${maru.batch.mh.meeting.reminder.cron}")
+public void meetingEmailReminder_BEFORE() { ... }
+
+// 변경 후 — 실행마다 DB 조회, 재시작 불필요
+@JobSchedulerTarget(
+    enabled = "${maru.batch.mh.meeting.reminder.active}",
+    cron    = "${maru.batch.mh.meeting.reminder.cron}"
+)
+public void meetingEmailReminder() {
+    // 순수 배치 로직만 작성
+    // enabled 체크, cron 관리는 JobSchedulerTargetProcessor 가 대신함
+}
+```
+
+> `@Scheduled` 어노테이션은 제거합니다.
+> `JobSchedulerTargetProcessor` 가 cron 스케줄까지 대신 등록합니다.
+
+### DB 구조 (SYS_CONFIG 테이블)
+
+| PROFILE | PROP_KEY | PROP_VALUE | DATA_TYPE | EDITABLE_YN |
+|---------|----------|-----------|-----------|-------------|
+| `batch1` | `maru.batch.mh.meeting.reminder.active` | `true` | `BOOLEAN` | `Y` |
+| `batch1` | `maru.batch.mh.meeting.reminder.cron` | `0 0/5 * * * ?` | `CRON` | `Y` |
+
+`EDITABLE_YN = 'Y'` → 런타임 변경 즉시 반영 (서버 재시작 불필요)
+
+### 동작 원리
+
+```
+기동 시:
+  JobSchedulerTargetProcessor (BeanPostProcessor)
+    → @JobSchedulerTarget 붙은 메서드 스캔
+    → enabled/cron 의 "${...}" 에서 DB key 추출
+    → TaskScheduler 에 태스크 등록 (enabled 체크 없이 무조건)
+
+실행마다:
+  ① enabledKey → SysConfigService.getBoolean() → DB 조회
+     false 이면 skip, true 이면 실행
+  ② cronKey    → SysConfigService.getString()  → DB 조회
+     최신 cron 표현식으로 다음 실행 시간 결정
+```
+
+### 파일 위치
+
+```
+src/main/java/
+└── maru/
+    └── platform/
+        ├── dbproperties/                         ← 기존 @DbValue 구조
+        │   ├── annotation/DbValue.java
+        │   ├── config/DbValueBeanPostProcessor.java
+        │   ├── dto/PropertiesResult.java
+        │   └── mapper/PropertiesMapper.java
+        │
+        └── scheduler/                            ← @JobSchedulerTarget 구조 (신규)
+            ├── annotation/JobSchedulerTarget.java
+            └── processor/JobSchedulerTargetProcessor.java
+```
+
+### JobSchedulerTargetProcessor 핵심 구조
+
+```java
+@Component
+public class JobSchedulerTargetProcessor implements BeanPostProcessor {
+
+    @Override
+    public Object postProcessAfterInitialization(Object bean, String beanName) {
+        Class<?> targetClass = AopUtils.getTargetClass(bean);  // AOP 프록시 대응
+
+        for (Method method : targetClass.getMethods()) {
+            JobSchedulerTarget ann = method.getAnnotation(JobSchedulerTarget.class);
+            if (ann == null) continue;
+
+            String enabledKey = extractKey(ann.enabled()); // "${...}" → key
+            String cronKey    = extractKey(ann.cron());    // "${...}" → key
+
+            taskScheduler.schedule(
+                () -> {
+                    // ★ @DbValue 와 동일한 구조: 실행마다 DB 조회
+                    boolean active = sysConfigService.getBoolean(enabledKey, false);
+                    if (!active) return;
+                    method.invoke(bean);
+                },
+                triggerContext -> {
+                    // ★ cron 도 실행마다 DB 조회 → 동적 스케줄 반영
+                    String cron = sysConfigService.getString(cronKey, "0 0/5 * * * ?");
+                    return new CronTrigger(cron).nextExecution(triggerContext);
+                }
+            );
+        }
+        return bean;
+    }
+}
+```
+
+### 코드 파일 목록
+
+| 파일 | 경로 (예제 기준) |
+|------|-----------------|
+| 어노테이션 | `example/annotation/JobSchedulerTarget.java` |
+| BeanPostProcessor | `example/processor/JobSchedulerTargetProcessor.java` |
+| 패턴 예제 | `example/pattern/Pat2_FeatureFlag.java` |
+| DB 스키마 | `resources/sql/SysConfig_schema.sql` |
+| **단위 테스트** | `test/.../processor/JobSchedulerTargetProcessorTest.java` |
+
+---
+
+### 테스트 방법
+
+#### 테스트 구조 (단위 테스트)
+
+실제 스케줄러 없이 `ArgumentCaptor`로 `Runnable`/`Trigger`를 꺼내
+즉시 실행함으로써 DB 조회 결과에 따른 동작을 검증합니다.
+
+```
+SysConfigService (Mock)  →  getBoolean() 반환값을 true/false 로 제어
+TaskScheduler    (Mock)  →  등록된 Runnable 을 ArgumentCaptor 로 포착
+                             → run() 직접 호출하여 배치 실행 시뮬레이션
+```
+
+#### 테스트 케이스 3가지
+
+**① enabled = true → 배치 실행 확인**
+
+```java
+@Test
+@DisplayName("enabled=true → 배치 메서드 실행됨")
+void enabled_true_배치_실행() {
+    TestBatch bean = new TestBatch();
+    given(sysConfigService.getBoolean(ENABLED_KEY, false)).willReturn(true);  // DB: true
+
+    processor.postProcessAfterInitialization(bean, "testBatch");
+    verify(taskScheduler).schedule(runnableCaptor.capture(), any(Trigger.class));
+    runnableCaptor.getValue().run();  // ← 실제 스케줄러 없이 즉시 실행
+
+    assertThat(bean.executed).isTrue();  // 메서드가 호출됨
+}
+```
+
+**② enabled = false → skip 확인**
+
+```java
+@Test
+@DisplayName("enabled=false → 배치 메서드 skip")
+void enabled_false_배치_스킵() {
+    TestBatch bean = new TestBatch();
+    given(sysConfigService.getBoolean(ENABLED_KEY, false)).willReturn(false); // DB: false
+
+    processor.postProcessAfterInitialization(bean, "testBatch");
+    verify(taskScheduler).schedule(runnableCaptor.capture(), any(Trigger.class));
+    runnableCaptor.getValue().run();
+
+    assertThat(bean.executed).isFalse();  // 메서드가 호출 안됨
+}
+```
+
+**③ cron → DB 값으로 다음 실행 시간 결정 확인**
+
+```java
+@Test
+@DisplayName("cron — DB에서 읽은 값으로 다음 실행 시간 결정")
+void cron_DB에서_동적_조회() {
+    String customCron = "0 0 9 * * ?";  // DB 에서 매일 09:00 으로 변경된 상황
+    given(sysConfigService.getString(CRON_KEY, DEFAULT_CRON)).willReturn(customCron);
+
+    processor.postProcessAfterInitialization(new TestBatch(), "testBatch");
+    verify(taskScheduler).schedule(any(Runnable.class), triggerCaptor.capture());
+
+    Instant nextTime = triggerCaptor.getValue().nextExecution(mock(TriggerContext.class));
+    assertThat(nextTime).isNotNull();  // cron 파싱 성공, 다음 실행 시간 계산됨
+}
+```
+
+#### 테스트 실행 명령
+
+```bash
+# 전체 테스트
+./gradlew test
+
+# 해당 클래스만
+./gradlew test --tests "com.chipset.example.processor.JobSchedulerTargetProcessorTest"
+
+# 특정 메서드만
+./gradlew test --tests "com.chipset.example.processor.JobSchedulerTargetProcessorTest.enabled_true_배치_실행"
+```
+
+#### 테스트 결과 위치
+
+```
+backend/build/reports/tests/test/index.html
+```
