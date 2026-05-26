@@ -1,4 +1,4 @@
-package com.chipset.example.annotation;
+package maru.platform.annotation;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
