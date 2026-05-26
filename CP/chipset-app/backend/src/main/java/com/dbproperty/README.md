@@ -220,3 +220,254 @@ mvn surefire-report:report
 - `JobSchedulerTargetBeanPostProcessor` 의 Runnable/Trigger 는 **ArgumentCaptor** 로 꺼내 즉시 실행
   → 실제 스케줄러 없이 배치 로직 검증 가능
 - Mockito **STRICT_STUBS** (기본값) 적용 — 사용하지 않는 stub 은 테스트 실패 처리
+
+### ObjectProvider 대응 — processor 수동 생성
+
+프로덕션 코드가 `ObjectProvider<T>` 로 변경됨에 따라 테스트 setup 방식도 변경되었습니다.
+
+**변경 전 (`@InjectMocks` 사용)**
+
+```java
+@Mock private PropertiesMapper propertiesMapper;
+@Mock private Environment      environment;
+@InjectMocks private DbValueBeanPostProcessor processor;
+// Mockito 가 생성자를 자동 호출해서 주입
+```
+
+**변경 후 (`@BeforeEach` 수동 생성)**
+
+```java
+@Mock private PropertiesMapper                 propertiesMapper;
+@Mock private ObjectProvider<PropertiesMapper> propertiesMapperProvider;
+@Mock private Environment                      environment;
+
+private DbValueBeanPostProcessor processor;
+
+@BeforeEach
+void setUp() {
+    lenient().when(propertiesMapperProvider.getObject()).thenReturn(propertiesMapper);
+    processor = new DbValueBeanPostProcessor(propertiesMapperProvider, environment);
+}
+```
+
+`@InjectMocks` 는 `ObjectProvider<PropertiesMapper>` 타입을 `@Mock PropertiesMapper` 로
+자동 매핑하지 못하므로 processor 를 직접 생성합니다.
+
+**`lenient()` 를 사용하는 이유**
+
+Mockito 기본 모드인 `STRICT_STUBS` 는 선언한 stub 이 테스트 내에서 한 번도 호출되지 않으면
+테스트를 실패 처리합니다.
+
+`p07_no_annotation_필드_무시` / `p07_no_annotation_빈_스케줄_미등록` 테스트는
+어노테이션이 없는 빈을 처리하므로 `provider.getObject()` 가 전혀 호출되지 않습니다.
+`@BeforeEach` 에 선언한 provider stub 이 이 테스트에서 미사용으로 판정되어 실패하게 됩니다.
+
+`lenient()` 는 이 infrastructure 성격의 공통 provider stub 에만 미사용 허용 예외를 부여합니다.
+비즈니스 로직 stub (`propertiesMapper.findByKey(...)` 등) 은 여전히 strict 하게 검증됩니다.
+
+| stub 종류 | 선언 방식 | 미사용 시 |
+|---|---|---|
+| `propertiesMapperProvider.getObject()` | `lenient().when(...)` | 허용 (infrastructure) |
+| `taskSchedulerProvider.getObject()` | `lenient().when(...)` | 허용 (infrastructure) |
+| `propertiesMapper.findByKey(...)` | `given(...).willReturn(...)` | 실패 처리 (비즈니스 검증) |
+
+---
+
+## 9. Spring 기동 생애주기 — BeanPostProcessor 초기화 시점
+
+`BeanPostProcessor` 는 Spring 컨테이너에서 **가장 먼저** 초기화되는 특수한 빈입니다.
+이 특성을 이해해야 `ObjectProvider` 를 사용한 이유가 명확해집니다.
+
+```
+[서버 시작]
+    │
+    ▼
+① JVM 시작
+    │
+    ▼
+② application.properties / yml 읽기
+    │                                      ← DB 연결 없음. @DbValue 사용 불가 구간
+    ▼
+③ PropertySourcesPlaceholderConfigurer 등록
+    │                                      ← ${...} 플레이스홀더 리졸브 담당
+    │                                         @FeignClient url="${clients.search}" 등
+    │                                         이 시점에 처리됨
+    ▼
+④ BeanPostProcessor 빈 초기화            ← ★★★ 일반 빈보다 훨씬 먼저 초기화
+    │
+    │   DbValueBeanPostProcessor
+    │   JobSchedulerTargetBeanPostProcessor
+    │
+    ▼
+⑤ Tomcat 포트 바인딩 (server.port)        ← 이후 포트 변경 불가
+    │
+    ▼
+⑥ Spring ApplicationContext 생성 (일반 빈)
+    │
+    ▼
+⑦ DataSource(DB 연결) 초기화              ← ★ 여기서부터 DB 조회 가능
+    │
+    ▼
+⑧ @Service, @Repository 빈 생성          ← ★★ BeanPostProcessor 가 실제로 동작하는 구간
+    │
+    │   각 빈이 생성될 때마다 자동으로 아래 순서 실행:
+    │
+    │   ① 빈 인스턴스 생성 (new)
+    │   ② postProcessBeforeInitialization() 호출  ← DB에서 refrc2/refrc3 읽어 필드 주입
+    │   ③ @PostConstruct 실행
+    │   ④ InitializingBean.afterPropertiesSet() 실행
+    │   ⑤ postProcessAfterInitialization() 호출   ← @JobSchedulerTarget 스케줄 등록
+    │
+    ▼
+⑨ @Scheduled 등록 (cron 표현식 고정)
+    │
+    ▼
+⑩ 서버 기동 완료
+    │
+    ▼
+[요청 처리 중]
+```
+
+---
+
+## 10. 트러블슈팅 — `@FeignClient` 플레이스홀더 오류와 `ObjectProvider` 적용
+
+### 발생한 오류
+
+두 `BeanPostProcessor` 를 도입한 이후 아래 오류가 발생했습니다.
+
+```
+org.springframework.beans.factory.BeanDefinitionStoreException:
+  Invalid bean definition with name 'maru.platform.clients.CockpitClient' defined in null:
+  Could not resolve placeholder 'clients.search' in value "http://${clients.search}"
+```
+
+`CockpitClient` 에는 아래와 같이 `@FeignClient` 가 선언되어 있었습니다.
+
+```java
+@FeignClient(value = "cockpit", url = "${clients.search}", fallback = CockpitClientFallback.class)
+interface CockpitClient { ... }
+```
+
+`application.properties` 에 `clients.search` 가 정상적으로 정의되어 있었음에도
+플레이스홀더를 찾지 못하는 오류가 발생했습니다.
+
+---
+
+### 원인 — BeanPostProcessor 조기 초기화의 Side Effect
+
+`BeanPostProcessor` 는 ④ 단계에서 다른 어떤 일반 빈보다도 먼저 초기화됩니다.
+이때 `PropertiesMapper` 를 **직접 의존성(`final` 필드)** 으로 가지고 있으면,
+Spring 은 `DbValueBeanPostProcessor` 를 만들기 위해 `PropertiesMapper` 를 **강제로 조기 초기화**합니다.
+
+```
+④ BeanPostProcessor 초기화
+    │
+    └─► DbValueBeanPostProcessor 생성 시도
+            │
+            └─► PropertiesMapper 강제 조기 초기화
+                    │
+                    └─► SqlSessionFactory 조기 초기화
+                            │
+                            └─► DataSource 조기 초기화
+                                    │
+                                    └─► 인프라 빈 전체가 ③ 단계 이전에 로드됨
+                                            │
+                                            ↓ 부작용 (Side Effect)
+                                        @FeignClient url="${clients.search}" 리졸브 시도
+                                        → PropertySourcesPlaceholderConfigurer 아직 미실행
+                                        → 플레이스홀더 못 찾음 ❌
+```
+
+정상 순서라면 `③ PropertySourcesPlaceholderConfigurer` 가 먼저 실행된 후
+`@FeignClient` 플레이스홀더가 리졸브되어야 하지만,
+`PropertiesMapper` 조기 초기화로 인해 이 순서가 역전되었습니다.
+
+---
+
+### 시도했던 방법 — `@Lazy` (효과 없음)
+
+```java
+// 시도 1: @RequiredArgsConstructor 와 함께 필드에 @Lazy
+@Lazy
+private final PropertiesMapper propertiesMapper;  // ❌ Lombok 이 @Lazy 를 생성자 파라미터에 전달하지 않음
+```
+
+`@RequiredArgsConstructor` 는 Lombok 이 생성자를 자동 생성하는데,
+필드에 붙인 `@Lazy` 는 Lombok 이 생성자 파라미터에 전달하지 않습니다.
+결과적으로 `@Lazy` 가 적용되지 않아 동일한 오류가 계속 발생했습니다.
+
+생성자를 직접 작성해도 `@Lazy` 프록시가 `BeanPostProcessor` 단계에서
+올바르게 동작하지 않는 경우가 있어 불안정합니다.
+
+---
+
+### 적용한 해결책 — `ObjectProvider<T>`
+
+`ObjectProvider<T>` 는 Spring 이 `BeanPostProcessor` 순서 문제 해결을 위해
+공식 권장하는 지연 조회(lazy lookup) 방식입니다.
+
+| 항목 | `PropertiesMapper` 직접 주입 | `ObjectProvider<PropertiesMapper>` |
+|------|-----------------------------|------------------------------------|
+| 초기화 시점 | `BeanPostProcessor` 생성 시 즉시 | `getObject()` 첫 호출 시 |
+| `@FeignClient` 영향 | ④ 단계에서 인프라 빈 조기 초기화 → 순서 역전 ❌ | 조기 초기화 없음 → 순서 정상 ✅ |
+| `@Lazy` 와의 차이 | — | Lombok 생성자와 무관하게 안정적 동작 |
+
+#### 변경 전
+
+```java
+@Component
+@RequiredArgsConstructor
+public class DbValueBeanPostProcessor implements BeanPostProcessor {
+
+    private final PropertiesMapper propertiesMapper;   // ❌ 조기 초기화 유발
+    private final Environment environment;
+}
+```
+
+#### 변경 후
+
+```java
+@Component
+@RequiredArgsConstructor
+public class DbValueBeanPostProcessor implements BeanPostProcessor {
+
+    private final ObjectProvider<PropertiesMapper> propertiesMapperProvider;  // ✅
+    private final Environment environment;
+
+    @Override
+    public Object postProcessBeforeInitialization(Object bean, String beanName) {
+        // ...
+        PropertiesResult result = propertiesMapperProvider.getObject()  // ← 실제 사용 시점에 초기화
+                                      .findByKey(key, profile);
+        // ...
+    }
+}
+```
+
+`JobSchedulerTargetBeanPostProcessor` 도 동일하게 `PropertiesMapper` 와 `TaskScheduler`
+두 의존성 모두 `ObjectProvider<T>` 로 변경했습니다.
+
+---
+
+### 수정 후 기동 흐름
+
+```
+④ BeanPostProcessor 초기화
+    │
+    └─► DbValueBeanPostProcessor 생성
+            │
+            └─► ObjectProvider<PropertiesMapper> 는 프록시만 생성 (실제 Mapper 미초기화)
+                    ✅ 인프라 빈 조기 초기화 없음
+
+③ PropertySourcesPlaceholderConfigurer 정상 실행
+    └─► @FeignClient url="${clients.search}" 정상 리졸브 ✅
+
+⑦ DataSource 초기화
+    └─► SqlSessionFactory → PropertiesMapper 정상 초기화
+
+⑧ @Service 빈 생성 시
+    └─► postProcessBeforeInitialization() 호출
+            └─► propertiesMapperProvider.getObject() 호출
+                    └─► 이 시점에 PropertiesMapper 첫 조회 → DB 조회 정상 실행 ✅
+```

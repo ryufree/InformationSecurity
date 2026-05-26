@@ -3,12 +3,13 @@ package maru.platform.config;
 import maru.platform.annotation.DbValue;
 import maru.platform.dto.PropertiesResult;
 import maru.platform.mapper.PropertiesMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.env.Environment;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -23,13 +24,28 @@ import static org.mockito.BDDMockito.*;
  *             프로파일 해석('common' fallback), @DbValue 없는 필드 무시, blank → 0 방어
  *   Negative: 숫자 변환 실패(NumberFormatException), DB null + defaultValue 없음 → 빈 문자열,
  *             boolean 비표준 문자열('yes') → false
+ *
+ * [ObjectProvider 설정]
+ *   ObjectProvider<PropertiesMapper> 는 @InjectMocks 로 자동 주입되지 않으므로
+ *   @BeforeEach 에서 processor 를 직접 생성한다.
+ *   propertiesMapperProvider.getObject() stub 은 lenient() 로 선언한다.
+ *   → p07(@DbValue 없는 필드 무시) 테스트에서 provider 가 호출되지 않아
+ *     STRICT_STUBS 위반이 발생하는 것을 방지하기 위함.
  */
 @ExtendWith(MockitoExtension.class)
 class ValueBeanPostProcessorTest {
 
-    @Mock private PropertiesMapper propertiesMapper;
-    @Mock private Environment      environment;
-    @InjectMocks private DbValueBeanPostProcessor processor;
+    @Mock private PropertiesMapper                  propertiesMapper;
+    @Mock private ObjectProvider<PropertiesMapper>  propertiesMapperProvider;
+    @Mock private Environment                       environment;
+
+    private DbValueBeanPostProcessor processor;
+
+    @BeforeEach
+    void setUp() {
+        lenient().when(propertiesMapperProvider.getObject()).thenReturn(propertiesMapper);
+        processor = new DbValueBeanPostProcessor(propertiesMapperProvider, environment);
+    }
 
     // ── Helpers ─────────────────────────────────────────────────────────
 

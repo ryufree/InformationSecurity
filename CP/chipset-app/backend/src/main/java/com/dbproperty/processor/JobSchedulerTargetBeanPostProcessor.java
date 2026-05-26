@@ -6,6 +6,7 @@ import maru.platform.annotation.JobSchedulerTarget;
 import maru.platform.dto.PropertiesResult;
 import maru.platform.mapper.PropertiesMapper;
 import org.springframework.aop.support.AopUtils;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.core.env.Environment;
 import org.springframework.scheduling.TaskScheduler;
@@ -19,8 +20,8 @@ import java.lang.reflect.Method;
 @RequiredArgsConstructor
 public class JobSchedulerTargetBeanPostProcessor implements BeanPostProcessor {
 
-    private final PropertiesMapper propertiesMapper;
-    private final TaskScheduler taskScheduler;
+    private final ObjectProvider<PropertiesMapper> propertiesMapperProvider;
+    private final ObjectProvider<TaskScheduler> taskSchedulerProvider;
     private final Environment environment;
 
     @Override
@@ -38,11 +39,11 @@ public class JobSchedulerTargetBeanPostProcessor implements BeanPostProcessor {
             log.info("[JobSchedulerTarget] 태스크 등록: method={}, enabledKey={}, cronKey={}",
                      method.getName(), enabledKey, cronKey);
 
-            taskScheduler.schedule(
+            taskSchedulerProvider.getObject().schedule(
                 // ① 실행마다 DB에서 enabled 조회
                 () -> {
                     String profile = resolveActiveProfile();
-                    PropertiesResult result = propertiesMapper.findByKey(enabledKey, profile);
+                    PropertiesResult result = propertiesMapperProvider.getObject().findByKey(enabledKey, profile);
                     String enabledStr = (result != null)
                         ? result.resolveValue("false")
                         : "false";
@@ -60,7 +61,7 @@ public class JobSchedulerTargetBeanPostProcessor implements BeanPostProcessor {
                 // ② 실행마다 DB에서 cron 조회 → 동적 스케줄 반영
                 triggerContext -> {
                     String profile = resolveActiveProfile();
-                    PropertiesResult result = propertiesMapper.findByKey(cronKey, profile);
+                    PropertiesResult result = propertiesMapperProvider.getObject().findByKey(cronKey, profile);
                     String cronExpr = (result != null)
                         ? result.resolveValue("0 0/5 * * * ?")
                         : "0 0/5 * * * ?";

@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import maru.platform.annotation.DbValue;
 import maru.platform.dto.PropertiesResult;
 import maru.platform.mapper.PropertiesMapper;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
@@ -15,7 +16,7 @@ import org.springframework.util.ReflectionUtils;
 @RequiredArgsConstructor
 public class DbValueBeanPostProcessor implements BeanPostProcessor {
 
-    private final PropertiesMapper propertiesMapper;
+    private final ObjectProvider<PropertiesMapper> propertiesMapperProvider;
     private final Environment environment;
 
     @Override
@@ -28,7 +29,7 @@ public class DbValueBeanPostProcessor implements BeanPostProcessor {
 
                 String key = annotation.value();
                 String profile = resolveActiveProfile();
-                PropertiesResult result = propertiesMapper.findByKey(key, profile);
+                PropertiesResult result = propertiesMapperProvider.getObject().findByKey(key, profile);
 
                 // 우선순위: refrc2(현재값) > refrc3(DB기본값) > annotation.defaultValue()
                 String rawValue = (result != null)

@@ -3,14 +3,15 @@ package maru.platform.config;
 import maru.platform.annotation.JobSchedulerTarget;
 import maru.platform.dto.PropertiesResult;
 import maru.platform.mapper.PropertiesMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.env.Environment;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.Trigger;
@@ -35,20 +36,38 @@ import static org.mockito.Mockito.mock;
  *   Positive: enabled=true → 메서드 실행, enabled=false → skip, DB cron 동적 조회,
  *             DB null 시 기본값 fallback, 프로파일 해석, ${...} 키 추출, 어노테이션 없는 빈 무시
  *   Negative: 메서드 예외 → RuntimeException 전파, 잘못된 cron → IllegalArgumentException
+ *
+ * [ObjectProvider 설정]
+ *   ObjectProvider<PropertiesMapper>, ObjectProvider<TaskScheduler> 는 @InjectMocks 로
+ *   자동 주입되지 않으므로 @BeforeEach 에서 processor 를 직접 생성한다.
+ *   두 provider stub 은 lenient() 로 선언한다.
+ *   → p07(@JobSchedulerTarget 없는 빈) 테스트에서 provider 가 호출되지 않아
+ *     STRICT_STUBS 위반이 발생하는 것을 방지하기 위함.
  */
 @ExtendWith(MockitoExtension.class)
 class JobSchedulerTargetBeanPostProcessorTest {
 
-    @Mock private PropertiesMapper propertiesMapper;
-    @Mock private TaskScheduler    taskScheduler;
-    @Mock private Environment      environment;
-    @InjectMocks private JobSchedulerTargetBeanPostProcessor processor;
+    @Mock private PropertiesMapper                 propertiesMapper;
+    @Mock private ObjectProvider<PropertiesMapper> propertiesMapperProvider;
+    @Mock private TaskScheduler                    taskScheduler;
+    @Mock private ObjectProvider<TaskScheduler>    taskSchedulerProvider;
+    @Mock private Environment                      environment;
+
+    private JobSchedulerTargetBeanPostProcessor processor;
 
     @Captor private ArgumentCaptor<Runnable> runnableCaptor;
     @Captor private ArgumentCaptor<Trigger>  triggerCaptor;
 
-    private static final String ENABLED_KEY  = "batch.job.active";
-    private static final String CRON_KEY     = "batch.job.cron";
+    private static final String ENABLED_KEY = "batch.job.active";
+    private static final String CRON_KEY    = "batch.job.cron";
+
+    @BeforeEach
+    void setUp() {
+        lenient().when(propertiesMapperProvider.getObject()).thenReturn(propertiesMapper);
+        lenient().when(taskSchedulerProvider.getObject()).thenReturn(taskScheduler);
+        processor = new JobSchedulerTargetBeanPostProcessor(
+                propertiesMapperProvider, taskSchedulerProvider, environment);
+    }
 
     // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -163,10 +182,10 @@ class JobSchedulerTargetBeanPostProcessorTest {
     @DisplayName("[P] '${...}' 형식 키 → key 추출 후 DB 조회됨")
     void p08_dollar_brace_key_추출() {
         given(environment.getActiveProfiles()).willReturn(new String[]{});
-        // TestBatch.enabled = "${batch.job.active}" → 추출 후 "batch.job.active" 로 조회
+        // PlainKeyBatch.enabled = "batch.job.active" (${} 없이 plain key)
         given(propertiesMapper.findByKey(ENABLED_KEY, "common")).willReturn(dbResult("true"));
 
-        PlainKeyBatch bean = new PlainKeyBatch(); // plain key (${} 없음)
+        PlainKeyBatch bean = new PlainKeyBatch();
         processor.postProcessAfterInitialization(bean, "plainKeyBatch");
         runCapturedRunnable();
 
