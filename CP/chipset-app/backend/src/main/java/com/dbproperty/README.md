@@ -471,3 +471,117 @@ public class DbValueBeanPostProcessor implements BeanPostProcessor {
             └─► propertiesMapperProvider.getObject() 호출
                     └─► 이 시점에 PropertiesMapper 첫 조회 → DB 조회 정상 실행 ✅
 ```
+
+---
+
+## 11. 부분 마이그레이션 — properties 파일과 DB 혼용 시 동작
+
+properties 파일에 있는 값을 DB 로 전부 옮기지 않은 경우, 두 방식이 같은 애플리케이션 안에 공존합니다.
+각 processor 가 어떻게 동작하는지 정확히 이해해야 의도치 않은 오동작을 방지할 수 있습니다.
+
+---
+
+### DbValueBeanPostProcessor
+
+이 processor 는 `@DbValue` 어노테이션이 붙은 필드만 처리합니다.
+`@Value` 어노테이션 필드는 완전히 무시하며, Spring 기본 메커니즘이 별도로 처리합니다.
+
+```
+필드에 @Value   → Spring PropertySourcesPlaceholderConfigurer 처리 → properties 파일에서 읽음
+필드에 @DbValue → DbValueBeanPostProcessor 처리                   → DB 에서 읽음
+```
+
+두 어노테이션은 독립적으로 동작하므로 같은 클래스 안에서 혼용해도 충돌하지 않습니다.
+
+```java
+// ✅ 같은 클래스에서 혼용 — 정상 동작
+@Service
+public class SomeService {
+
+    @Value("${app.name}")           // properties 파일에서 읽음
+    private String appName;
+
+    @DbValue(value = "app.timeout") // DB 에서 읽음
+    private int timeout;
+}
+```
+
+#### DB 에 키가 없을 때의 fallback
+
+`@DbValue` 가 선언된 필드는 **DB 만 참조합니다.** DB 에 키가 없으면 properties 파일로 되돌아가지 않고
+어노테이션의 `defaultValue` 를 사용합니다.
+
+```
+@DbValue 처리 흐름:
+  DB 조회 결과 있음 → refrc2 > refrc3 > annotation.defaultValue()
+  DB 조회 결과 없음 → annotation.defaultValue()   ← properties 파일 값은 참조하지 않음
+```
+
+```java
+// properties 파일: app.timeout=60
+@DbValue(value = "app.timeout", defaultValue = "30")
+private int timeout;
+// DB 에 app.timeout 키가 없으면 → timeout = 30  (properties 의 60 이 아님)
+```
+
+> `@Value` → `@DbValue` 로 코드를 바꿨는데 DB 에 키를 아직 추가하지 않은 경우,
+> properties 파일 값이 아닌 어노테이션 `defaultValue` 가 적용됩니다.
+> DB 에 키를 먼저 추가한 뒤 코드를 전환하거나, `defaultValue` 를 properties 의 값과 맞춰두어야 합니다.
+
+---
+
+### JobSchedulerTargetBeanPostProcessor
+
+이 processor 는 `@JobSchedulerTarget` 어노테이션이 붙은 메서드만 처리합니다.
+`@Scheduled` 메서드는 완전히 무시하며, Spring `ScheduledAnnotationBeanPostProcessor` 가 별도로 처리합니다.
+
+```
+메서드에 @Scheduled          → Spring ScheduledAnnotationBeanPostProcessor 처리 → properties cron 사용 (기동 시 고정)
+메서드에 @JobSchedulerTarget → JobSchedulerTargetBeanPostProcessor 처리        → 실행마다 DB 조회 (동적)
+```
+
+#### DB 에 키가 없을 때의 fallback
+
+`@JobSchedulerTarget` 은 실행마다 DB 를 조회합니다. DB 에 키가 없으면 아래 기본값이 적용됩니다.
+
+| 속성 | DB 키 없을 때 기본값 | 결과 |
+|------|---------------------|------|
+| `enabled` | `"false"` | 배치가 항상 skip — **무음 장애 위험** |
+| `cron` | `"0 0/5 * * * ?"` | 5분마다 실행 시도 (enabled=false 이면 실제 실행 안 됨) |
+
+> `@Scheduled` → `@JobSchedulerTarget` 으로 코드를 바꿨는데 DB 에 키를 아직 추가하지 않은 경우,
+> `enabled` 기본값이 `"false"` 이므로 배치가 조용히 중단됩니다. 오류 없이 skip 되므로 발견이 어렵습니다.
+
+#### 절대 금지 — 두 어노테이션 동시 선언
+
+```java
+// ❌ 이중 등록 — 배치가 2번 실행됨
+@Scheduled(cron = "${batch.job.cron}")
+@JobSchedulerTarget(enabled = "${batch.job.active}", cron = "${batch.job.cron}")
+public void myBatch() { ... }
+```
+
+`Spring ScheduledAnnotationBeanPostProcessor` 와 `JobSchedulerTargetBeanPostProcessor` 가
+각각 독립적으로 스케줄을 등록하므로 동일한 메서드가 2번 실행됩니다.
+`@Scheduled` 를 `@JobSchedulerTarget` 으로 전환할 때 반드시 `@Scheduled` 를 제거해야 합니다.
+
+---
+
+### 마이그레이션 전환 상태별 체크리스트
+
+| 전환 상태 | 코드 어노테이션 | DB 키 필요 | 위험 사항 |
+|---|---|---|---|
+| 미전환 (properties 그대로) | `@Value("${key}")` | 불필요 | 없음 |
+| 미전환 (배치 그대로) | `@Scheduled(cron = "${key}")` | 불필요 | 없음 |
+| 전환 완료 (필드) | `@DbValue(value = "key")` | **필수** | DB 키 없으면 `defaultValue` 사용 (properties 무시) |
+| 전환 완료 (배치) | `@JobSchedulerTarget(enabled = "key")` | **필수** | DB 키 없으면 `enabled=false` → 배치 무음 중단 |
+| 전환 실수 | `@Scheduled` + `@JobSchedulerTarget` 동시 선언 | — | 배치 이중 실행 버그 |
+
+**안전한 전환 순서**
+
+```
+1. DB 테이블에 키/값 먼저 추가
+2. 코드에서 @Value → @DbValue 또는 @Scheduled → @JobSchedulerTarget 으로 변경
+3. @Scheduled 제거 확인 (JobSchedulerTarget 전환 시)
+4. 배포 후 배치 실행 로그 확인
+```
