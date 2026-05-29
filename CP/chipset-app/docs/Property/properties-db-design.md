@@ -281,15 +281,22 @@ public class Boot {
 public class DbPropertyApplicationListener
         implements ApplicationListener<ApplicationEnvironmentPreparedEvent> {
 
+    private static final String ENABLED_KEY     = "maru.db-property.enabled";
+    private static final String DEFAULT_ENABLED = "true";
+
     @Override
     public void onApplicationEvent(ApplicationEnvironmentPreparedEvent event) {
         ConfigurableEnvironment environment = event.getEnvironment();
 
-        // 소문자 변환 — 프로시저 내에서 LOWER() 처리하지만 Java 에서도 보장
-        List<String> activeProfiles = Arrays.stream(environment.getActiveProfiles())
-                .map(String::toLowerCase)
-                .collect(Collectors.toList());
+        // ── 1. DB Property 활성화 플래그 확인 ─────────────────────────────
+        // application.properties 또는 -Dmaru.db-property.enabled 로 제어.
+        // 이 플래그 자체는 DB 에서 읽지 않음 (닭·달걀 문제 방지).
+        String enabled = environment.getProperty(ENABLED_KEY, DEFAULT_ENABLED);
+        if (!"true".equalsIgnoreCase(enabled.trim())) {
+            return; // false → DB 로딩 스킵, 파일 property 만 사용
+        }
 
+        // ── 2. datasource 설정 확인 ────────────────────────────────────────
         String url      = environment.getProperty("spring.datasource.url");
         String username = environment.getProperty("spring.datasource.username");
         String password = environment.getProperty("spring.datasource.password");
@@ -299,6 +306,12 @@ public class DbPropertyApplicationListener
             return; // datasource 미설정 → DB 로딩 스킵
         }
 
+        // ── 3. 활성 프로파일 수집 ─────────────────────────────────────────
+        List<String> activeProfiles = Arrays.stream(environment.getActiveProfiles())
+                .map(String::toLowerCase)
+                .collect(Collectors.toList());
+
+        // ── 4. DB Property 로딩 & 등록 ────────────────────────────────────
         Map<String, Object> dbProperties =
                 DbPropertyLoader.loadFromJdbc(url, username, password, driver, activeProfiles);
 
@@ -386,10 +399,96 @@ public class DbPropertyLoader {
 | 커넥션 관리 | 루프 내 생성 위험 | ✅ try-with-resources 단일 커넥션 |
 | actv_yn 검사 | ❌ 없음 | ✅ `actv_yn = 1` 체크 |
 | 잘못된 import | kafka.Sensor | ✅ 제거됨 |
+| DB 로딩 on/off | ❌ 없음 | ✅ `maru.db-property.enabled` 플래그 |
 
 ---
 
-## 9. Properties 파일과 DB의 관계 (우선순위)
+## 9. DB Property 로딩 활성화 플래그
+
+### 개요
+
+`application.properties` 에 `maru.db-property.enabled` 키를 설정하여 DB 로딩을 런타임 없이 on/off 할 수 있습니다.
+
+```properties
+# application.properties
+# true  → DB 에서 property 를 읽어 파일보다 우선 적용 (기본값)
+# false → DB 로딩 스킵, 파일 property 만 사용
+maru.db-property.enabled=true
+```
+
+> **중요**: 이 플래그는 DB 에서 읽지 않고 **파일 / JVM 인수에서만** 읽습니다.  
+> DB 로딩을 끄는 플래그를 DB 에서 읽는다면 닭·달걀 문제가 발생하기 때문입니다.
+
+---
+
+### 동작 흐름 (플래그 별)
+
+#### `maru.db-property.enabled=true` (기본)
+
+```
+application.properties 로드 (Spring 자동)
+        ↓
+ApplicationEnvironmentPreparedEvent 발생
+        ↓
+DbPropertyApplicationListener
+  → enabled = "true"
+  → SP_GET_PROPERTIES 호출
+  → dbProperties 를 addFirst 등록
+        ↓
+@Value 주입 → DB 값 우선 적용
+```
+
+#### `maru.db-property.enabled=false`
+
+```
+application.properties 로드 (Spring 자동)
+        ↓
+ApplicationEnvironmentPreparedEvent 발생
+        ↓
+DbPropertyApplicationListener
+  → enabled = "false"
+  → return (즉시 종료 — DB 호출 없음)
+        ↓
+@Value 주입 → 파일 값만 적용
+```
+
+---
+
+### 제어 방법 3가지
+
+| 방법 | 예시 | 우선순위 |
+|---|---|---|
+| `application.properties` 파일 | `maru.db-property.enabled=false` | 기본 |
+| JVM 시스템 속성 | `-Dmaru.db-property.enabled=false` | 파일보다 높음 |
+| JVM 커맨드라인 인수 | `--maru.db-property.enabled=false` | 시스템 속성보다 높음 |
+
+> 플래그가 파일 / JVM 인수에 있다는 점이 핵심입니다.  
+> 긴급하게 DB 로딩을 끄고 싶을 때 **재빌드 없이 JVM 인수로 즉시 비활성화** 가능합니다.
+
+---
+
+### 환경별 설정 권장
+
+| 환경 | 권장 값 | 이유 |
+|---|---|---|
+| local (개발자 PC) | `false` | DB 접속 없이 파일만으로 개발 가능 |
+| dev 서버 | `true` | DB Property 테스트 |
+| staging / rc | `true` | 운영과 동일 방식 검증 |
+| live (운영) | `true` | DB 중앙 관리 |
+
+profile 별로 다르게 하고 싶다면 `application-local.properties` 에 `false` 설정:
+
+```properties
+# application-local.properties  (로컬 개발용)
+maru.db-property.enabled=false
+```
+
+> 단, `maru.db-property.enabled` 는 DB 에 저장하지 마십시오.  
+> 이 키가 DB 에 있더라도 DB 로딩 전에 플래그를 읽기 때문에 무시됩니다.
+
+---
+
+## 10. Properties 파일과 DB의 관계 (우선순위)
 
 ### 두 소스를 모두 읽는다
 
